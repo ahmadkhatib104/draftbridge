@@ -1,0 +1,6 @@
+name = "draftbridge-email-ingest"
+main = "src/index.ts"
+compatibility_date = "2026-03-23"
+
+[[send_email]]
+name = "EMAIL"

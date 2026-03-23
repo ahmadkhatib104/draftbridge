@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProofLoop Brand Asset</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #173629;
+        --mint: #d9eadc;
+        --mist: #eef4ef;
+        --line: rgba(23, 54, 41, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(138, 184, 149, 0.26), transparent 32%),
+          radial-gradient(circle at bottom right, rgba(23, 54, 41, 0.16), transparent 30%),
+          linear-gradient(160deg, #f7fbf7 0%, #edf4ee 52%, #e7efe8 100%);
+        color: var(--ink);
+      }
+
+      body.icon {
+        width: 1200px;
+        height: 1200px;
+      }
+
+      body.feature {
+        width: 1600px;
+        height: 900px;
+      }
+
+      .shell {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .mark {
+        position: relative;
+        background: linear-gradient(160deg, #224637 0%, #173629 100%);
+        border-radius: 32%;
+        box-shadow: 0 44px 120px rgba(23, 54, 41, 0.22);
+      }
+
+      .icon .mark {
+        width: 760px;
+        height: 760px;
+      }
+
+      .feature .mark {
+        width: 280px;
+        height: 280px;
+      }
+
+      .loop,
+      .loop::before,
+      .loop::after {
+        position: absolute;
+        display: block;
+        content: "";
+      }
+
+      .loop {
+        inset: 50% auto auto 50%;
+        width: 54%;
+        height: 54%;
+        transform: translate(-50%, -50%);
+      }
+
+      .loop::before,
+      .loop::after {
+        inset: 0;
+        border-radius: 42%;
+        border: 32px solid #f5faf5;
+      }
+
+      .icon .loop::before,
+      .icon .loop::after {
+        border-width: 40px;
+      }
+
+      .loop::before {
+        transform: translate(-12%, -12%);
+      }
+
+      .loop::after {
+        transform: translate(12%, 12%);
+        opacity: 0.92;
+      }
+
+      .feature-card {
+        position: absolute;
+        right: 110px;
+        width: 760px;
+        padding: 44px 48px;
+        border-radius: 34px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(247, 250, 248, 0.95));
+        border: 1px solid var(--line);
+        box-shadow: 0 32px 90px rgba(23, 54, 41, 0.12);
+      }
+
+      .feature-card .kicker {
+        margin: 0 0 14px;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .feature-card h1 {
+        margin: 0 0 18px;
+        font-size: 62px;
+        line-height: 1.04;
+      }
+
+      .feature-card p {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.38;
+        color: rgba(23, 54, 41, 0.84);
+      }
+
+      .feature-accent {
+        position: absolute;
+        inset: 100px auto auto 116px;
+        display: flex;
+        flex-direction: column;
+        gap: 26px;
+      }
+
+      .pill {
+        width: 192px;
+        height: 20px;
+        border-radius: 999px;
+        background: rgba(23, 54, 41, 0.12);
+      }
+
+      .pill.small {
+        width: 132px;
+      }
+
+      .pill.mint {
+        background: rgba(110, 152, 118, 0.24);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" id="shell">
+      <div class="mark">
+        <div class="loop"></div>
+      </div>
+      <section class="feature-card" id="feature-card" hidden>
+        <p class="kicker">ProofLoop</p>
+        <h1>Review controls for Shopify stores.</h1>
+        <p>
+          Publish a clear policy, track provenance, keep an audit trail, and support
+          review documentation without promising one-click compliance.
+        </p>
+      </section>
+      <div class="feature-accent" id="feature-accent" hidden>
+        <div class="pill mint"></div>
+        <div class="pill"></div>
+        <div class="pill small mint"></div>
+      </div>
+    </main>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const type = params.get("type") || "icon";
+      const featureCard = document.getElementById("feature-card");
+      const featureAccent = document.getElementById("feature-accent");
+
+      document.body.classList.add(type);
+
+      if (type === "feature") {
+        featureCard.hidden = false;
+        featureAccent.hidden = false;
+      }
+    </script>
+  </body>
+</html>

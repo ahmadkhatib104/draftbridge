@@ -1,0 +1,84 @@
+.page {
+  min-height: 100vh;
+  padding: 2.5rem 1.5rem 4rem;
+  background:
+    radial-gradient(circle at top left, rgba(245, 202, 168, 0.85), transparent 28%),
+    linear-gradient(180deg, #f7f3ea 0%, #e8e0cf 52%, #d8e5dc 100%);
+  color: #1f2b21;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+.shell {
+  width: min(100%, 52rem);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title,
+.intro,
+.meta,
+.sectionTitle {
+  margin: 0;
+}
+
+.title {
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  line-height: 0.95;
+  max-width: 11ch;
+}
+
+.intro,
+.meta,
+.content li {
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.4rem;
+  border-radius: 1.4rem;
+  border: 1px solid rgba(31, 43, 33, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 24px 60px rgba(31, 43, 33, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.sectionTitle {
+  font-size: 1.1rem;
+}
+
+.content {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.links {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.links a {
+  color: #1f2b21;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+@media only screen and (max-width: 48rem) {
+  .page {
+    padding: 1.5rem 1rem 3rem;
+  }
+}

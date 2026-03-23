@@ -1,0 +1,2 @@
+INGEST_ENDPOINT="https://your-draftbridge-host.example.com/webhooks/inbound-email"
+EMAIL_INGEST_SHARED_SECRET="replace-me"

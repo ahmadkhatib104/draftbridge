@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProofLoop Screenshot Frame</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #edf3ee;
+        --ink: #173629;
+        --card: #f7faf8;
+        --line: rgba(23, 54, 41, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(120, 170, 135, 0.2), transparent 36%),
+          radial-gradient(circle at bottom right, rgba(23, 54, 41, 0.12), transparent 28%),
+          linear-gradient(160deg, #f7fbf7 0%, #eef4ef 45%, #e9f0ea 100%);
+        color: var(--ink);
+      }
+
+      .canvas {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .halo {
+        position: absolute;
+        inset: 56px;
+        border-radius: 40px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.2));
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      }
+
+      .device {
+        position: relative;
+        border-radius: 28px;
+        background: linear-gradient(180deg, #ffffff, var(--card));
+        border: 1px solid var(--line);
+        box-shadow: 0 30px 80px rgba(23, 54, 41, 0.12);
+        overflow: hidden;
+      }
+
+      .device.product {
+        border-radius: 36px;
+        box-shadow: 0 32px 100px rgba(23, 54, 41, 0.16);
+      }
+
+      .shot {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center center;
+        display: block;
+        background: #fff;
+      }
+
+      .device.product .shot {
+        object-fit: contain;
+        padding: 18px;
+        background:
+          linear-gradient(180deg, #f7faf7 0%, #eef5ef 100%);
+      }
+
+      .mask {
+        position: absolute;
+        background: rgba(247, 250, 248, 0.98);
+        border-radius: 999px;
+        display: none;
+      }
+
+      .mask.square {
+        border-radius: 10px;
+      }
+
+      .badge {
+        position: absolute;
+        top: 64px;
+        left: 92px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: rgba(23, 54, 41, 0.92);
+        color: #f4fbf4;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .canvas.product .badge {
+        left: 112px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="canvas" id="canvas">
+      <div class="halo"></div>
+      <div class="badge">ProofLoop</div>
+      <div class="device" id="device">
+        <img class="shot" id="shot" alt="" />
+        <div class="mask" id="mask1"></div>
+        <div class="mask square" id="mask2"></div>
+      </div>
+    </main>
+    <script>
+      const shots = {
+        activation: {
+          src: "./screenshots/raw/activation-raw.png",
+          width: 1360,
+          height: 732,
+          fit: "cover",
+          position: "center top",
+        },
+        reviews: {
+          src: "./screenshots/raw/reviews-workflow-raw.png",
+          width: 1120,
+          height: 720,
+          fit: "contain",
+          position: "center center",
+        },
+        reports: {
+          src: "./screenshots/raw/reports-section-raw.png",
+          width: 1120,
+          height: 720,
+          fit: "cover",
+          position: "center top",
+        },
+        billing: {
+          src: "./screenshots/raw/billing-raw.png",
+          width: 1360,
+          height: 590,
+          fit: "cover",
+          position: "center top",
+          masks: [
+            { id: "mask1", left: 220, top: 246, width: 288, height: 40 },
+          ],
+        },
+        storefront: {
+          src: "./screenshots/raw/storefront-panel-raw.png",
+          width: 760,
+          height: 760,
+          fit: "contain",
+          position: "center center",
+          product: true,
+        },
+      };
+
+      const params = new URLSearchParams(window.location.search);
+      const shotName = params.get("shot") || "activation";
+      const config = shots[shotName];
+      const canvas = document.getElementById("canvas");
+      const device = document.getElementById("device");
+      const img = document.getElementById("shot");
+      const badge = document.querySelector(".badge");
+
+      if (!config) {
+        throw new Error(`Unknown screenshot preset: ${shotName}`);
+      }
+
+      if (config.product) {
+        canvas.classList.add("product");
+        device.classList.add("product");
+        badge.textContent = "Storefront";
+      }
+
+      device.style.width = `${config.width}px`;
+      device.style.height = `${config.height}px`;
+      img.src = config.src;
+      img.style.objectFit = config.fit;
+      img.style.objectPosition = config.position;
+
+      for (const maskId of ["mask1", "mask2"]) {
+        const el = document.getElementById(maskId);
+        el.style.display = "none";
+      }
+
+      if (config.masks) {
+        for (const mask of config.masks) {
+          const el = document.getElementById(mask.id);
+          el.style.display = "block";
+          el.style.left = `${mask.left}px`;
+          el.style.top = `${mask.top}px`;
+          el.style.width = `${mask.width}px`;
+          el.style.height = `${mask.height}px`;
+        }
+      }
+    </script>
+  </body>
+</html>

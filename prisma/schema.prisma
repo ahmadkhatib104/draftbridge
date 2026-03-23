@@ -1,0 +1,513 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OnboardingStatus {
+  INSTALL_STARTED
+  MAILBOX_CREATED
+  SAMPLE_RECEIVED
+  READY
+}
+
+enum MailboxProvider {
+  CLOUDFLARE_EMAIL_ROUTING
+}
+
+enum InboundMessageStatus {
+  RECEIVED
+  PARSED
+  AUTO_DRAFTED
+  OPS_REVIEW
+  FAILED
+}
+
+enum SourceDocumentKind {
+  EMAIL_BODY
+  PDF
+  CSV
+  XLSX
+  IMAGE
+  TEXT
+}
+
+enum ParseStatus {
+  PENDING
+  PARSED
+  FALLBACK_REQUIRED
+  FAILED
+}
+
+enum PurchaseOrderStatus {
+  RECEIVED
+  EXTRACTED
+  VALIDATED
+  AUTO_DRAFTED
+  OPS_REVIEW
+  FAILED
+  DUPLICATE
+}
+
+enum LineValidationStatus {
+  PENDING
+  MATCHED
+  REVIEW_REQUIRED
+  INVALID
+}
+
+enum CatalogAliasType {
+  CUSTOMER_SKU
+  DESCRIPTION
+}
+
+enum CustomerAliasType {
+  SENDER_EMAIL
+  COMPANY_NAME
+  CONTACT_EMAIL
+  SHIP_TO_NAME
+}
+
+enum ValidationSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum DraftOrderStatus {
+  PENDING
+  CREATED
+  FAILED
+}
+
+enum UsageEventType {
+  INCLUDED_SUCCESS
+  OVERAGE_SUCCESS
+}
+
+enum OpsCaseStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_MERCHANT
+  RESOLVED
+}
+
+enum AuditActorType {
+  SYSTEM
+  USER
+  WEBHOOK
+  OPS
+}
+
+enum AuditEntityType {
+  SHOP
+  MAILBOX
+  MESSAGE
+  DOCUMENT
+  PURCHASE_ORDER
+  LINE_ITEM
+  BILLING
+  DRAFT_ORDER
+  OPS_CASE
+}
+
+enum BillingPlan {
+  FREE
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum BillingStatus {
+  INACTIVE
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@index([shop])
+}
+
+model Shop {
+  id                String            @id @default(cuid())
+  shopDomain        String            @unique
+  shopifyShopId     String?           @unique
+  name              String?
+  email             String?
+  timezone          String            @default("America/Phoenix")
+  currencyCode      String            @default("USD")
+  onboardingStatus  OnboardingStatus  @default(INSTALL_STARTED)
+  installedAt       DateTime?
+  uninstalledAt     DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  users             User[]
+  mailboxes         Mailbox[]
+  senderProfiles    SenderProfile[]
+  inboundMessages   InboundMessage[]
+  sourceDocuments   SourceDocument[]
+  purchaseOrders    PurchaseOrder[]
+  validationIssues  ValidationIssue[]
+  catalogAliases    CatalogAlias[]
+  customerAliases   CustomerAlias[]
+  draftOrderSyncs   DraftOrderSync[]
+  usageLedgers      UsageLedger[]
+  billingState      BillingState?
+  opsCases          OpsCase[]
+  auditEvents       AuditEvent[]
+}
+
+model User {
+  id            String       @id @default(cuid())
+  shopId        String
+  shopifyUserId String?
+  email         String
+  firstName     String?
+  lastName      String?
+  lastSeenAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  shop          Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  auditEvents   AuditEvent[]
+
+  @@unique([shopId, email])
+  @@index([shopId])
+}
+
+model Mailbox {
+  id                String          @id @default(cuid())
+  shopId            String
+  provider          MailboxProvider @default(CLOUDFLARE_EMAIL_ROUTING)
+  routingKey        String          @unique
+  forwardingAddress String          @unique
+  inboundDomain     String
+  senderHint        String?
+  isPrimary         Boolean         @default(true)
+  lastInboundAt     DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  shop              Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  inboundMessages   InboundMessage[]
+  purchaseOrders    PurchaseOrder[]
+
+  @@index([shopId])
+}
+
+model SenderProfile {
+  id               String         @id @default(cuid())
+  shopId           String
+  senderEmail      String
+  senderDomain     String
+  customerName     String?
+  companyName      String?
+  contactEmail     String?
+  defaultCurrency  String?
+  spreadsheetHints Json?
+  sampleSubject    String?
+  lastSeenAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  shop             Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrders   PurchaseOrder[]
+  catalogAliases   CatalogAlias[]
+
+  @@unique([shopId, senderEmail])
+  @@index([shopId, senderDomain])
+}
+
+model InboundMessage {
+  id                 String               @id @default(cuid())
+  shopId             String
+  mailboxId          String
+  externalMessageId  String?
+  dedupeHash         String
+  senderEmail        String
+  senderName         String?
+  subject            String?
+  rawTextBody        String?
+  rawHtmlBody        String?
+  receivedAt         DateTime
+  status             InboundMessageStatus @default(RECEIVED)
+  processingAttempts Int                  @default(0)
+  lastProcessedAt    DateTime?
+  lastError          String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  shop               Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  mailbox            Mailbox              @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  sourceDocuments    SourceDocument[]
+  purchaseOrders     PurchaseOrder[]
+
+  @@unique([shopId, dedupeHash])
+  @@index([shopId, status, receivedAt])
+  @@index([mailboxId, receivedAt])
+}
+
+model SourceDocument {
+  id              String           @id @default(cuid())
+  shopId          String
+  inboundMessageId String
+  kind            SourceDocumentKind
+  filename        String?
+  contentType     String?
+  contentSize     Int?
+  contentHash     String
+  storageProvider String           @default("database")
+  storageKey      String?
+  contentBase64   String?
+  extractedText   String?
+  pageCount       Int?
+  parseStatus     ParseStatus      @default(PENDING)
+  parseError      String?
+  sequence        Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  inboundMessage  InboundMessage   @relation(fields: [inboundMessageId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder?
+
+  @@index([shopId, contentHash])
+  @@index([inboundMessageId, sequence])
+}
+
+model PurchaseOrder {
+  id                     String              @id @default(cuid())
+  shopId                 String
+  inboundMessageId       String
+  sourceDocumentId       String              @unique
+  mailboxId              String?
+  senderProfileId        String?
+  status                 PurchaseOrderStatus @default(RECEIVED)
+  poNumber               String?
+  supplierReference      String?
+  customerName           String?
+  companyName            String?
+  contactEmail           String?
+  currency               String?
+  orderDate              DateTime?
+  shipToName             String?
+  shipToAddress          String?
+  billToName             String?
+  billToAddress          String?
+  notes                  String?
+  extractedConfidence    Float               @default(0)
+  finalConfidence        Float               @default(0)
+  clarificationNeeded    Boolean             @default(false)
+  duplicateOfId          String?
+  matchedCustomerId      String?
+  matchedCompanyId       String?
+  matchedCompanyLocationId String?
+  billableSuccessAt      DateTime?
+  lastRetriedAt          DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  shop                   Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  inboundMessage         InboundMessage      @relation(fields: [inboundMessageId], references: [id], onDelete: Cascade)
+  mailbox                Mailbox?            @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  senderProfile          SenderProfile?      @relation(fields: [senderProfileId], references: [id], onDelete: SetNull)
+  sourceDocument         SourceDocument      @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  duplicateOf            PurchaseOrder?      @relation("PurchaseOrderDuplicate", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates             PurchaseOrder[]     @relation("PurchaseOrderDuplicate")
+  lineItems              PurchaseOrderLine[]
+  validationIssues       ValidationIssue[]
+  draftOrderSync         DraftOrderSync?
+  opsCase                OpsCase?
+  usageLedgers           UsageLedger[]
+  auditEvents            AuditEvent[]
+
+  @@index([shopId, status, createdAt])
+  @@index([shopId, poNumber])
+  @@index([senderProfileId, createdAt])
+}
+
+model PurchaseOrderLine {
+  id                  String               @id @default(cuid())
+  purchaseOrderId     String
+  lineNumber          Int
+  customerSku         String?
+  merchantSku         String?
+  description         String?
+  quantity            Int?
+  unitPrice           Decimal?             @db.Decimal(10, 2)
+  uom                 String?
+  extractedConfidence Float                @default(0)
+  matchConfidence     Float                @default(0)
+  matchedVariantId    String?
+  matchedSku          String?
+  matchedTitle        String?
+  validationStatus    LineValidationStatus @default(PENDING)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  purchaseOrder       PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  validationIssues    ValidationIssue[]
+
+  @@index([purchaseOrderId, lineNumber])
+}
+
+model CatalogAlias {
+  id              String           @id @default(cuid())
+  shopId          String
+  senderProfileId String?
+  aliasType       CatalogAliasType
+  sourceValue     String
+  normalizedValue String
+  variantId       String
+  sku             String?
+  title           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  senderProfile   SenderProfile?   @relation(fields: [senderProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([shopId, aliasType, normalizedValue, senderProfileId])
+  @@index([shopId, aliasType, normalizedValue])
+}
+
+model CustomerAlias {
+  id                String            @id @default(cuid())
+  shopId            String
+  aliasType         CustomerAliasType
+  sourceValue       String
+  normalizedValue   String
+  customerId        String?
+  companyId         String?
+  companyLocationId String?
+  contactEmail      String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  shop              Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, aliasType, normalizedValue])
+  @@index([shopId, aliasType, normalizedValue])
+}
+
+model ValidationIssue {
+  id              String             @id @default(cuid())
+  shopId          String
+  purchaseOrderId String
+  lineItemId      String?
+  severity        ValidationSeverity @default(ERROR)
+  code            String
+  message         String
+  blocking        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  shop            Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  lineItem        PurchaseOrderLine? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId, blocking])
+  @@index([shopId, severity, createdAt])
+}
+
+model DraftOrderSync {
+  id                   String          @id @default(cuid())
+  shopId               String
+  purchaseOrderId      String          @unique
+  status               DraftOrderStatus @default(PENDING)
+  shopifyDraftOrderId  String?
+  shopifyDraftOrderName String?
+  errorMessage         String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  shop                 Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrder        PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, status, updatedAt])
+}
+
+model UsageLedger {
+  id              String         @id @default(cuid())
+  shopId          String
+  purchaseOrderId String?
+  eventType       UsageEventType
+  units           Int            @default(1)
+  billable        Boolean        @default(true)
+  occurredAt      DateTime       @default(now())
+  billedAt        DateTime?
+  createdAt       DateTime       @default(now())
+  shop            Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, eventType, occurredAt])
+}
+
+model BillingState {
+  id                 String        @id @default(cuid())
+  shopId             String        @unique
+  plan               BillingPlan   @default(FREE)
+  status             BillingStatus @default(INACTIVE)
+  shopifySubscriptionId String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  includedUsageLimit Int           @default(0)
+  billableUsageCount Int           @default(0)
+  overageUsageCount  Int           @default(0)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  shop               Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model OpsCase {
+  id                       String        @id @default(cuid())
+  shopId                   String
+  purchaseOrderId          String        @unique
+  status                   OpsCaseStatus @default(OPEN)
+  priority                 Int           @default(2)
+  summary                  String
+  resolutionNotes          String?
+  clarificationRequestedAt DateTime?
+  resolvedAt               DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  shop                     Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrder            PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  auditEvents              AuditEvent[]
+
+  @@index([shopId, status, createdAt])
+}
+
+model AuditEvent {
+  id              String          @id @default(cuid())
+  shopId          String
+  purchaseOrderId String?
+  opsCaseId       String?
+  actorType       AuditActorType  @default(SYSTEM)
+  actorUserId     String?
+  entityType      AuditEntityType
+  entityId        String
+  action          String
+  summary         String
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  shop            Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  opsCase         OpsCase?        @relation(fields: [opsCaseId], references: [id], onDelete: SetNull)
+  actorUser       User?           @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, createdAt])
+  @@index([entityType, entityId])
+}

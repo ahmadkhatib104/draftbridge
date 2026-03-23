@@ -1,0 +1,201 @@
+.index {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  padding: 3rem;
+  gap: 2rem;
+  align-items: stretch;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top left, rgba(245, 202, 168, 0.9), transparent 32%),
+    linear-gradient(135deg, #f7f3ea 0%, #ebe3d2 50%, #dce7df 100%);
+  font-family: "Instrument Sans", sans-serif;
+  color: #1f2b21;
+}
+
+.hero,
+.panel {
+  width: min(100%, 38rem);
+}
+
+.hero {
+  display: grid;
+  gap: 1.5rem;
+  align-content: center;
+}
+
+.panel {
+  display: grid;
+  gap: 2rem;
+}
+
+.kicker,
+.panelLabel {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.heading,
+.text {
+  padding: 0;
+  margin: 0;
+}
+
+.heading {
+  font-size: clamp(2.8rem, 6vw, 4.7rem);
+  line-height: 0.96;
+  max-width: 12ch;
+}
+
+.text {
+  font-size: 1.1rem;
+  line-height: 1.7;
+  max-width: 38rem;
+}
+
+.trustStrip {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.trustPill {
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 43, 33, 0.12);
+  font-size: 0.9rem;
+}
+
+.form {
+  display: flex;
+  align-items: end;
+  justify-content: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(31, 43, 33, 0.12);
+  border-radius: 1.25rem;
+  padding: 1rem;
+  backdrop-filter: blur(14px);
+}
+
+.label {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 18rem;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.input {
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(31, 43, 33, 0.16);
+  font: inherit;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.button {
+  padding: 0.88rem 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  color: #f8f7f2;
+  background: #1f2b21;
+  cursor: pointer;
+}
+
+.valueList,
+.panelList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.valueList > li,
+.panelList > li {
+  text-align: left;
+  line-height: 1.6;
+}
+
+.linkRow {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.linkRow a {
+  color: #1f2b21;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.panelCard {
+  padding: 1.4rem;
+  border-radius: 1.4rem;
+  background: rgba(31, 43, 33, 0.92);
+  color: #f4efe2;
+  box-shadow: 0 24px 60px rgba(31, 43, 33, 0.18);
+}
+
+.planGrid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.planCard {
+  padding: 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(244, 239, 226, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.planName,
+.planSummary,
+.planNote,
+.finePrint {
+  margin: 0;
+}
+
+.planName {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 700;
+}
+
+.planSummary,
+.planNote,
+.finePrint {
+  line-height: 1.6;
+}
+
+.planSummary,
+.planNote {
+  margin-top: 0.55rem;
+}
+
+.finePrint {
+  margin-top: 0.85rem;
+  color: rgba(244, 239, 226, 0.88);
+}
+
+@media only screen and (max-width: 64rem) {
+  .index {
+    padding: 1.5rem;
+    grid-auto-flow: row;
+    flex-direction: column;
+  }
+
+  .hero,
+  .panel {
+    width: 100%;
+  }
+}

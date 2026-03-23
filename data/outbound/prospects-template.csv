@@ -1,0 +1,4 @@
+merchant_name,store_url,region,review_provider,review_count_estimate,imported_reviews_signal,public_policy_signal,disclosure_signal,provenance_signal,trust_category,agency_portfolio,contact_name,contact_role,notes
+Example UK Supplements Store,https://example-supplements.co.uk,UK,Judge.me,420,yes,missing,weak,weak,supplements,no,,founder,"Imported reviews appear visible on product pages and no public review policy is easy to find."
+Example Beauty Brand,https://example-beauty.com,UK,Judge.me,135,no,missing,weak,weak,beauty,no,,ecommerce lead,"High review volume, visible trust dependence, but provenance signals look thin."
+Example Ecommerce Agency,https://example-agency.co.uk,UK,Judge.me,250,yes,unknown,weak,unknown,fashion,yes,,agency director,"Agency appears to manage several review-heavy Shopify brands and could standardize the workflow."
