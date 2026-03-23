@@ -51,6 +51,33 @@ async function createPrimaryMailbox(shopId: string, shopDomain: string) {
   throw new Error(`Could not create a unique mailbox for ${shopDomain}.`);
 }
 
+async function syncPrimaryMailboxDomain(shopId: string, mailboxId: string, routingKey: string) {
+  const expectedInboundDomain = getEmailRoutingDomain();
+  const expectedForwardingAddress = buildForwardingAddress(routingKey);
+
+  const mailbox = await db.mailbox.update({
+    where: { id: mailboxId },
+    data: {
+      inboundDomain: expectedInboundDomain,
+      forwardingAddress: expectedForwardingAddress,
+    },
+  });
+
+  await createAuditEvent({
+    shopId,
+    entityType: "MAILBOX",
+    entityId: mailbox.id,
+    action: "MAILBOX_UPDATED",
+    summary: `Updated forwarding mailbox to ${mailbox.forwardingAddress}.`,
+    metadata: {
+      forwardingAddress: mailbox.forwardingAddress,
+      inboundDomain: mailbox.inboundDomain,
+    },
+  });
+
+  return mailbox;
+}
+
 export async function ensureShopRecord(
   shopDomain: string,
   sessionEmail?: string | null,
@@ -90,6 +117,17 @@ export async function ensureShopRecord(
       summary: `Created forwarding mailbox ${mailbox.forwardingAddress}.`,
       metadata: { forwardingAddress: mailbox.forwardingAddress },
     });
+  } else {
+    const expectedInboundDomain = getEmailRoutingDomain();
+    const expectedForwardingAddress = buildForwardingAddress(mailbox.routingKey);
+
+    if (
+      mailbox.provider === MailboxProvider.CLOUDFLARE_EMAIL_ROUTING &&
+      (mailbox.inboundDomain !== expectedInboundDomain ||
+        mailbox.forwardingAddress !== expectedForwardingAddress)
+    ) {
+      mailbox = await syncPrimaryMailboxDomain(shop.id, mailbox.id, mailbox.routingKey);
+    }
   }
 
   await upsertBillingStateSafely({

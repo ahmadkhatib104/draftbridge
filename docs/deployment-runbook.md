@@ -35,7 +35,7 @@
 
 ## Cloudflare Email Routing
 
-1. Purchase or delegate the mail domain used by `EMAIL_ROUTING_DOMAIN`.
+1. Purchase or delegate the inbound mail domain used by `EMAIL_ROUTING_DOMAIN`.
 2. Enable Cloudflare Email Routing and route the DraftBridge aliases to the Worker in `workers/email-ingest/`.
 3. Set the Worker `INGEST_ENDPOINT` to `https://your-app-host.example.com/webhooks/inbound-email`.
 4. Set the Worker secret and Render `EMAIL_INGEST_SHARED_SECRET` to the same value.

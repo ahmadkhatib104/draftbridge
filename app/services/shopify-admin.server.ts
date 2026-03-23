@@ -17,6 +17,18 @@ export interface CustomerMatchCandidate {
   email: string | null;
 }
 
+function isRecoverableShopifyReadError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  return (
+    message.includes("No Shopify session is available") ||
+    message.includes("Shopify GraphQL request failed with 401") ||
+    message.includes("Customer object") ||
+    message.includes("protected-customer-data") ||
+    message.includes("ACCESS_DENIED")
+  );
+}
+
 async function getOfflineAccessToken(shopDomain: string) {
   const offlineSession =
     (await db.session.findFirst({
@@ -98,75 +110,83 @@ export async function searchProductVariants(shopDomain: string, term: string) {
     return [];
   }
 
-  const candidateQueries = term.includes(" ")
-    ? [term.trim()]
-    : [`sku:${escapeSearchTerm(term)}`, escapeSearchTerm(term)];
+  try {
+    const candidateQueries = term.includes(" ")
+      ? [term.trim()]
+      : [`sku:${escapeSearchTerm(term)}`, escapeSearchTerm(term)];
 
-  const matches: VariantMatchCandidate[] = [];
+    const matches: VariantMatchCandidate[] = [];
 
-  for (const queryValue of candidateQueries) {
-    const payload = await adminGraphql<{
-      data?: {
-        productVariants?: {
-          edges?: Array<{
-            node?: {
-              id: string;
-              legacyResourceId: string;
-              sku?: string | null;
-              title: string;
-              price?: string | null;
-              product?: { title?: string | null } | null;
-            };
-          }>;
+    for (const queryValue of candidateQueries) {
+      const payload = await adminGraphql<{
+        data?: {
+          productVariants?: {
+            edges?: Array<{
+              node?: {
+                id: string;
+                legacyResourceId: string;
+                sku?: string | null;
+                title: string;
+                price?: string | null;
+                product?: { title?: string | null } | null;
+              };
+            }>;
+          };
         };
-      };
-    }>(
-      shopDomain,
-      `#graphql
-        query DraftBridgeProductVariantSearch($query: String!) {
-          productVariants(first: 10, query: $query) {
-            edges {
-              node {
-                id
-                legacyResourceId
-                sku
-                title
-                price
-                product {
+      }>(
+        shopDomain,
+        `#graphql
+          query DraftBridgeProductVariantSearch($query: String!) {
+            productVariants(first: 10, query: $query) {
+              edges {
+                node {
+                  id
+                  legacyResourceId
+                  sku
                   title
+                  price
+                  product {
+                    title
+                  }
                 }
               }
-            }
-          }
-        }`,
-      { query: queryValue },
-    );
+            };
+          }`,
+        { query: queryValue },
+      );
 
-    const result =
-      payload.data?.productVariants?.edges
-        ?.map((edge) => edge.node)
-        .filter((node): node is NonNullable<typeof node> => Boolean(node))
-        .map((node) => ({
-          gid: node.id,
-          legacyId: String(node.legacyResourceId),
-          sku: node.sku ?? null,
-          title: node.title,
-          productTitle: node.product?.title ?? node.title,
-          price: node.price ? Number(node.price) : null,
-        })) ?? [];
+      const result =
+        payload.data?.productVariants?.edges
+          ?.map((edge) => edge.node)
+          .filter((node): node is NonNullable<typeof node> => Boolean(node))
+          .map((node) => ({
+            gid: node.id,
+            legacyId: String(node.legacyResourceId),
+            sku: node.sku ?? null,
+            title: node.title,
+            productTitle: node.product?.title ?? node.title,
+            price: node.price ? Number(node.price) : null,
+          })) ?? [];
 
-    for (const match of result) {
-      if (!matches.find((existing) => existing.gid === match.gid)) {
-        matches.push(match);
+      for (const match of result) {
+        if (!matches.find((existing) => existing.gid === match.gid)) {
+          matches.push(match);
+        }
+      }
+
+      if (matches.length > 0) {
+        break;
       }
     }
 
-    if (matches.length > 0) {
-      break;
+    return matches;
+  } catch (error) {
+    if (isRecoverableShopifyReadError(error)) {
+      return [];
     }
-  }
 
-  return matches;
+    throw error;
+  }
 }
 
 export async function searchCustomers(shopDomain: string, term: string) {
@@ -218,13 +238,7 @@ export async function searchCustomers(shopDomain: string, term: string) {
         })) ?? []
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-
-    if (
-      message.includes("Customer object") ||
-      message.includes("protected-customer-data") ||
-      message.includes("ACCESS_DENIED")
-    ) {
+    if (isRecoverableShopifyReadError(error)) {
       return [];
     }
 

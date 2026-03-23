@@ -17,7 +17,7 @@
 - `SHOPIFY_APP_URL`
 - `SHOPIFY_APP_HANDLE`
 - `SCOPES`
-- `EMAIL_ROUTING_DOMAIN`
+- `EMAIL_ROUTING_DOMAIN` (the exact inbound domain, for example `draftbridgehq.com`)
 - `EMAIL_INGEST_SHARED_SECRET`
 - `OPENAI_API_KEY`
 - `OPENAI_PRIMARY_MODEL`

@@ -20,7 +20,7 @@ export function requireAppUrl() {
 }
 
 export function getEmailRoutingDomain() {
-  return process.env.EMAIL_ROUTING_DOMAIN?.trim() || "mail.example.com";
+  return process.env.EMAIL_ROUTING_DOMAIN?.trim() || "example.com";
 }
 
 export function hasEmailIngestConfig() {
