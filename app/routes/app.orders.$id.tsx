@@ -4,6 +4,14 @@ import db from "../db.server";
 import { requireShopContext } from "../services/shop-context.server";
 import { submitMerchantClarification } from "../services/processing.server";
 
+function formatTimestamp(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(value);
+}
+
 export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const { shop } = await requireShopContext(request);
   const order = await db.purchaseOrder.findFirstOrThrow({
@@ -28,7 +36,15 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
     },
   });
 
-  return { order };
+  return {
+    order: {
+      ...order,
+      auditEvents: order.auditEvents.map((event) => ({
+        ...event,
+        createdAtLabel: formatTimestamp(event.createdAt),
+      })),
+    },
+  };
 };
 
 export const action = async ({ params, request }: ActionFunctionArgs) => {
@@ -188,7 +204,7 @@ export default function OrderDetailRoute() {
                 <div key={event.id}>
                   <strong>{event.action}</strong>
                   <p style={{ margin: "0.25rem 0 0" }}>
-                    {new Date(event.createdAt).toLocaleString()} | {event.summary}
+                    {event.createdAtLabel} | {event.summary}
                   </p>
                 </div>
               ))}

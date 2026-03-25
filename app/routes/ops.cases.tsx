@@ -6,6 +6,14 @@ import {
   retryPurchaseOrderResolution,
 } from "../services/processing.server";
 
+function formatTimestamp(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(value);
+}
+
 function assertOpsAccess(request: Request) {
   const expectedToken = process.env.OPS_DASHBOARD_TOKEN?.trim();
 
@@ -72,7 +80,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  return { cases };
+  return {
+    cases: cases.map((opsCase) => ({
+      ...opsCase,
+      purchaseOrder: {
+        ...opsCase.purchaseOrder,
+        auditEvents: opsCase.purchaseOrder.auditEvents.map((event) => ({
+          ...event,
+          createdAtLabel: formatTimestamp(event.createdAt),
+        })),
+      },
+    })),
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -363,7 +382,7 @@ export default function OpsCasesRoute() {
                   <ul>
                     {opsCase.purchaseOrder.auditEvents.map((event) => (
                       <li key={event.id}>
-                        {new Date(event.createdAt).toLocaleString()} | {event.action} | {event.summary}
+                        {event.createdAtLabel} | {event.action} | {event.summary}
                       </li>
                     ))}
                   </ul>

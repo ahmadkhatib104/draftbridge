@@ -5,6 +5,18 @@ import { hasEmailIngestConfig, hasOpenAiConfig, hasR2Config } from "../lib/env.s
 import { requireShopContext } from "../services/shop-context.server";
 import { getPrimaryMailbox } from "../services/shop.server";
 
+function formatTimestamp(value: Date | null) {
+  if (!value) {
+    return "never";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(value);
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireShopContext(request);
   const [mailbox, senderProfiles] = await Promise.all([
@@ -19,7 +31,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     shop,
     mailbox,
-    senderProfiles,
+    senderProfiles: senderProfiles.map((profile) => ({
+      ...profile,
+      lastSeenLabel: formatTimestamp(profile.lastSeenAt),
+    })),
     configReadiness: {
       openAi: hasOpenAiConfig(),
       r2: hasR2Config(),
@@ -61,7 +76,7 @@ export default function SettingsRoute() {
                   <strong>{profile.senderEmail}</strong>
                   <p style={{ margin: "0.25rem 0 0" }}>
                     {profile.companyName || profile.customerName || "Unknown account"} | Last seen{" "}
-                    {profile.lastSeenAt ? new Date(profile.lastSeenAt).toLocaleString() : "never"}
+                    {profile.lastSeenLabel}
                   </p>
                 </div>
               ))}
