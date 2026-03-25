@@ -82,6 +82,31 @@ interface UsageRecordMutationResponse {
   errors?: Array<{ message?: string }>;
 }
 
+export interface ActiveSubscriptionDiagnostics {
+  id: string;
+  name: string;
+  status: string;
+  trialDays: number;
+  currentPeriodEnd: string | null;
+  recurringAmount: number | null;
+  recurringCurrencyCode: string | null;
+  hasUsageLineItem: boolean;
+  usageLineItemId: string | null;
+  usageTerms: string | null;
+  usageCappedAmount: number | null;
+  usageCurrencyCode: string | null;
+}
+
+export interface BillingDiagnostics {
+  activeSubscription: ActiveSubscriptionDiagnostics | null;
+  includedSuccessCount: number;
+  overageSuccessCount: number;
+  billedOverageCount: number;
+  pendingOverageCount: number;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+}
+
 type BillingStateUpsertInput = {
   shopId: string;
   create: Omit<Prisma.BillingStateUncheckedCreateInput, "shopId">;
@@ -268,6 +293,30 @@ function amountForSubscription(subscription: ActiveSubscription) {
   return null;
 }
 
+function recurringLineItemForSubscription(subscription: ActiveSubscription | null) {
+  if (!subscription) {
+    return null;
+  }
+
+  return (
+    subscription.lineItems.find(
+      (entry) => entry.plan?.pricingDetails?.__typename === "AppRecurringPricing",
+    ) ?? null
+  );
+}
+
+function usageLineItemForSubscription(subscription: ActiveSubscription | null) {
+  if (!subscription) {
+    return null;
+  }
+
+  return (
+    subscription.lineItems.find(
+      (entry) => entry.plan?.pricingDetails?.__typename === "AppUsagePricing",
+    ) ?? null
+  );
+}
+
 function derivePlan(subscription: ActiveSubscription | null) {
   if (!subscription) {
     return "FREE" as const;
@@ -367,6 +416,44 @@ async function queryActiveSubscriptions(admin: AdminGraphqlClient) {
   );
   const payload = (await response.json()) as BillingQueryResponse;
   return payload.data?.currentAppInstallation?.activeSubscriptions ?? [];
+}
+
+function buildActiveSubscriptionDiagnostics(
+  subscription: ActiveSubscription | null,
+): ActiveSubscriptionDiagnostics | null {
+  if (!subscription) {
+    return null;
+  }
+
+  const recurringLineItem = recurringLineItemForSubscription(subscription);
+  const usageLineItem = usageLineItemForSubscription(subscription);
+
+  return {
+    id: subscription.id,
+    name: subscription.name,
+    status: subscription.status,
+    trialDays: subscription.trialDays,
+    currentPeriodEnd: subscription.currentPeriodEnd,
+    recurringAmount: recurringLineItem?.plan?.pricingDetails?.price?.amount
+      ? Number(recurringLineItem.plan.pricingDetails.price.amount)
+      : null,
+    recurringCurrencyCode:
+      recurringLineItem?.plan?.pricingDetails?.price?.currencyCode ?? null,
+    hasUsageLineItem: Boolean(usageLineItem),
+    usageLineItemId: usageLineItem?.id ?? null,
+    usageTerms: usageLineItem?.plan?.pricingDetails?.terms ?? null,
+    usageCappedAmount: usageLineItem?.plan?.pricingDetails?.cappedAmount?.amount
+      ? Number(usageLineItem.plan.pricingDetails.cappedAmount.amount)
+      : null,
+    usageCurrencyCode:
+      usageLineItem?.plan?.pricingDetails?.cappedAmount?.currencyCode ?? null,
+  };
+}
+
+export async function getActiveSubscriptionDiagnostics(admin: AdminGraphqlClient) {
+  const activeSubscriptions = await queryActiveSubscriptions(admin);
+
+  return activeSubscriptions.map((subscription) => buildActiveSubscriptionDiagnostics(subscription)!);
 }
 
 export async function syncBillingStateIfStale(input: {
@@ -504,15 +591,56 @@ export async function getBillingUiState(shopId: string, billingState: BillingSta
 }
 
 function getUsageLineItemId(subscription: ActiveSubscription | null) {
-  if (!subscription) {
-    return null;
-  }
+  return usageLineItemForSubscription(subscription)?.id ?? null;
+}
 
-  const lineItem = subscription.lineItems.find(
-    (entry) => entry.plan?.pricingDetails?.__typename === "AppUsagePricing",
+export async function getBillingDiagnostics(input: {
+  shopId: string;
+  billingState: BillingState | null;
+  admin: AdminGraphqlClient;
+}) {
+  const occurredAtFilter = input.billingState?.currentPeriodStart
+    ? {
+        gte: input.billingState.currentPeriodStart,
+      }
+    : undefined;
+  const [activeSubscriptions, usageLedger] = await Promise.all([
+    queryActiveSubscriptions(input.admin),
+    db.usageLedger.findMany({
+      where: {
+        shopId: input.shopId,
+        billable: true,
+        ...(occurredAtFilter ? { occurredAt: occurredAtFilter } : {}),
+      },
+      select: {
+        eventType: true,
+        billedAt: true,
+      },
+    }),
+  ]);
+
+  const activeSubscription = buildActiveSubscriptionDiagnostics(
+    pickSubscription(activeSubscriptions),
   );
+  const includedSuccessCount = usageLedger.filter(
+    (entry) => entry.eventType === "INCLUDED_SUCCESS",
+  ).length;
+  const overageRows = usageLedger.filter((entry) => entry.eventType === "OVERAGE_SUCCESS");
+  const billedOverageCount = overageRows.filter((entry) => entry.billedAt).length;
+  const pendingOverageCount = overageRows.length - billedOverageCount;
 
-  return lineItem?.id ?? null;
+  return {
+    activeSubscription,
+    includedSuccessCount,
+    overageSuccessCount: overageRows.length,
+    billedOverageCount,
+    pendingOverageCount,
+    currentPeriodStart: input.billingState?.currentPeriodStart?.toISOString() ?? null,
+    currentPeriodEnd:
+      activeSubscription?.currentPeriodEnd ??
+      input.billingState?.currentPeriodEnd?.toISOString() ??
+      null,
+  } satisfies BillingDiagnostics;
 }
 
 export async function recordOverageUsageCharge(input: {

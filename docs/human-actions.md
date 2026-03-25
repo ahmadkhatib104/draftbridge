@@ -15,14 +15,18 @@
 ## Required Before First Paid Pilot
 
 1. Verify billing starts and cancels correctly from `/app/billing`.
-2. Verify one sample email body, one PDF, and one spreadsheet flow end to end.
-3. Confirm draft orders appear in the dev store with the correct line items.
-4. Confirm the internal ops queue is reachable through `/ops/cases`.
-5. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
+2. If the billing model changes, cancel and reaccept the QA test subscription so the active Shopify subscription includes the usage line item.
+3. Verify `/app/billing` reports `Usage line item attached: Yes`.
+4. Run `npm run report:drift -- --shop your-store.myshopify.com` and confirm the report matches `/app/reporting`.
+5. Verify one sample email body, one PDF, and one spreadsheet flow end to end.
+6. Confirm draft orders appear in the dev store with the correct line items.
+7. Confirm the internal ops queue is reachable through `/ops/cases`.
+8. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
 
 ## Ongoing
 
 - Monitor inbound email failures and webhook errors.
 - Review open ops cases daily.
 - Review parse drift weekly.
+- Review `/app/reporting` for sender or document-type drift after major catalog or pricing changes.
 - Review successful PO counts vs included plan limits weekly.

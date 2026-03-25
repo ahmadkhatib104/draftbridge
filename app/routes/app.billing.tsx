@@ -19,6 +19,7 @@ import {
 } from "../shopify.server";
 import {
   buildBillingReturnUrl,
+  getBillingDiagnostics,
   getBillingTestMode,
   getBillingUiState,
   normalizeInAppPath,
@@ -85,9 +86,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   const billingUi = await getBillingUiState(shop.id, billingState);
+  const diagnostics = await getBillingDiagnostics({
+    shopId: shop.id,
+    billingState,
+    admin,
+  });
 
   return {
     billing: billingUi,
+    diagnostics,
     plans: getBillingPlanCatalog(),
     returnPath,
     activeSubscriptions: billingCheck.appSubscriptions.map((subscription) => ({
@@ -203,7 +210,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function BillingRoute() {
-  const { billing, plans, returnPath, activeSubscriptions } =
+  const { billing, diagnostics, plans, returnPath, activeSubscriptions } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
@@ -238,6 +245,24 @@ export default function BillingRoute() {
             Successful POs this period: {billing.usageCount} / {billing.includedUsageLimit}
           </s-paragraph>
           <s-paragraph>Overage count: {billing.overageUsageCount}</s-paragraph>
+        </s-card>
+
+        <s-card heading="Billing diagnostics">
+          <s-paragraph>
+            Active subscription: {diagnostics.activeSubscription?.name ?? "None"}
+          </s-paragraph>
+          <s-paragraph>
+            Usage line item attached: {diagnostics.activeSubscription?.hasUsageLineItem ? "Yes" : "No"}
+          </s-paragraph>
+          <s-paragraph>
+            Included successes: {diagnostics.includedSuccessCount} | Overage successes: {diagnostics.overageSuccessCount}
+          </s-paragraph>
+          <s-paragraph>
+            Billed overages: {diagnostics.billedOverageCount} | Pending overages: {diagnostics.pendingOverageCount}
+          </s-paragraph>
+          {diagnostics.activeSubscription?.usageTerms ? (
+            <s-paragraph>{diagnostics.activeSubscription.usageTerms}</s-paragraph>
+          ) : null}
         </s-card>
 
         {actionData?.error ? (

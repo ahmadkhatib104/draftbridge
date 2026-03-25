@@ -70,6 +70,7 @@ npm run dev
 - `npm test`
 - `npm run typecheck`
 - `npm run lint`
+- `npm run report:drift -- --shop draftbridge-qa.myshopify.com`
 
 ## Important Human Checkpoints
 
@@ -86,6 +87,7 @@ npm run dev
 - `/app/onboarding`
 - `/app/orders`
 - `/app/billing`
+- `/app/reporting`
 - `/app/settings`
 - `/webhooks/inbound-email`
 - `/ops/cases`

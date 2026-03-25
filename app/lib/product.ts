@@ -9,5 +9,6 @@ export const APP_NAVIGATION = [
   { href: "/app/onboarding", label: "Onboarding" },
   { href: "/app/orders", label: "Orders" },
   { href: "/app/billing", label: "Billing" },
+  { href: "/app/reporting", label: "Reporting" },
   { href: "/app/settings", label: "Settings" },
 ] as const;

@@ -21,6 +21,7 @@
 7. Shopify catalog and customer matching run against live Admin API data plus learned alias memory.
 8. Validated, high-confidence orders create Shopify draft orders through the Admin API.
 9. Blocking or uncertain cases become `OpsCase` rows for internal review.
+10. Operational reporting rolls up funnel, drift, queue, and billing-diagnostic metrics for `/app/reporting` and terminal drift reports.
 
 ## Key Models
 

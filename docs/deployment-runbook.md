@@ -33,6 +33,7 @@
 1. Update `shopify.app.toml` with the real `client_id` and public URL.
 2. Run `npm run config:link`.
 3. Install the app on a dev or pilot store.
+4. Reaccept the test subscription from `/app/billing` whenever the recurring-plus-usage billing model changes.
 
 ## Cloudflare Email Routing
 
@@ -41,6 +42,7 @@
 3. Set the Worker `INGEST_ENDPOINT` to `https://your-app-host.example.com/webhooks/inbound-email`.
 4. Set the Worker secret and Render `EMAIL_INGEST_SHARED_SECRET` to the same value.
 5. Send a sample email with PDF and spreadsheet attachments.
+6. Run `npm run report:drift -- --shop your-store.myshopify.com` and compare the results against `/app/reporting`.
 
 Recommended baseline:
 - `OPENAI_PRIMARY_MODEL=gpt-5.4-mini`

@@ -1,6 +1,11 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { Link, useLoaderData } from "react-router";
-import { getBillingUiState, syncBillingStateIfStale } from "../services/billing.server";
+import {
+  getBillingDiagnostics,
+  getBillingUiState,
+  syncBillingStateIfStale,
+} from "../services/billing.server";
+import { getOperationalReport } from "../services/reporting.server";
 import { requireShopContext } from "../services/shop-context.server";
 import { getDashboardSnapshot } from "../services/shop.server";
 
@@ -15,16 +20,33 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     getBillingUiState(shop.id, billingState),
     getDashboardSnapshot(shop.id),
   ]);
+  const [billingDiagnostics, report] = await Promise.all([
+    getBillingDiagnostics({
+      shopId: shop.id,
+      billingState,
+      admin,
+    }),
+    getOperationalReport({
+      shopId: shop.id,
+    }),
+  ]);
 
   return {
     shop,
     billing,
+    billingDiagnostics,
     dashboard,
+    report,
   };
 };
 
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 export default function AppIndex() {
-  const { shop, billing, dashboard } = useLoaderData<typeof loader>();
+  const { shop, billing, billingDiagnostics, dashboard, report } =
+    useLoaderData<typeof loader>();
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -120,6 +142,54 @@ export default function AppIndex() {
                 </div>
               ))}
             </div>
+          </s-card>
+        </div>
+
+        <div
+          style={{
+            marginTop: "1.5rem",
+            display: "grid",
+            gap: "1rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          }}
+        >
+          <s-card heading="7-day straight-through">
+            <s-paragraph>{percent(report.current.straightThroughRate)}</s-paragraph>
+            <s-paragraph>
+              {report.current.autoDraftedCount} auto-drafted out of {report.current.orderCount} orders.
+            </s-paragraph>
+            <s-paragraph>
+              Review rate {percent(report.current.reviewRate)} | Failure rate {percent(report.current.failureRate)}
+            </s-paragraph>
+          </s-card>
+
+          <s-card heading="Usage billing">
+            <s-paragraph>
+              Usage line item attached: {billingDiagnostics.activeSubscription?.hasUsageLineItem ? "Yes" : "No"}
+            </s-paragraph>
+            <s-paragraph>
+              Included successes: {billingDiagnostics.includedSuccessCount} | Overage successes: {billingDiagnostics.overageSuccessCount}
+            </s-paragraph>
+            <s-paragraph>
+              Billed overages: {billingDiagnostics.billedOverageCount} | Pending: {billingDiagnostics.pendingOverageCount}
+            </s-paragraph>
+          </s-card>
+
+          <s-card heading="Current drift alerts">
+            {report.driftAlerts.length === 0 ? (
+              <s-paragraph>No material drift alerts in the latest 7-day window.</s-paragraph>
+            ) : (
+              <div style={{ display: "grid", gap: "0.5rem" }}>
+                {report.driftAlerts.slice(0, 3).map((alert) => (
+                  <s-paragraph key={`${alert.dimension}-${alert.label}-${alert.metric}`}>
+                    {alert.label}: {alert.metric} {percent(alert.currentValue)} vs {percent(alert.priorValue)}
+                  </s-paragraph>
+                ))}
+              </div>
+            )}
+            <p style={{ marginTop: "0.5rem" }}>
+              <Link to="/app/reporting">Open detailed reporting</Link>
+            </p>
           </s-card>
         </div>
       </s-page>
