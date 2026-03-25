@@ -19,6 +19,7 @@ export interface BillingPlanCatalogEntry {
   monthlyPrice: number;
   priceLabel: string;
   includedUsageLimit: number;
+  overagePrice: number | null;
   overagePriceLabel: string;
   summary: string;
 }
@@ -31,6 +32,7 @@ export const BILLING_PLAN_CATALOG: BillingPlanCatalogEntry[] = [
     monthlyPrice: 99,
     priceLabel: "$99/month",
     includedUsageLimit: 25,
+    overagePrice: 3,
     overagePriceLabel: "$3.00 / successful PO",
     summary: "For smaller wholesale teams handling low monthly PO volume.",
   },
@@ -41,6 +43,7 @@ export const BILLING_PLAN_CATALOG: BillingPlanCatalogEntry[] = [
     monthlyPrice: 249,
     priceLabel: "$249/month",
     includedUsageLimit: 100,
+    overagePrice: 2,
     overagePriceLabel: "$2.00 / successful PO",
     summary: "The default plan for merchants processing regular wholesale orders.",
   },
@@ -51,6 +54,7 @@ export const BILLING_PLAN_CATALOG: BillingPlanCatalogEntry[] = [
     monthlyPrice: 499,
     priceLabel: "$499/month",
     includedUsageLimit: 300,
+    overagePrice: 1.5,
     overagePriceLabel: "$1.50 / successful PO",
     summary: "For larger ops teams that want a higher included volume before overages.",
   },
@@ -61,6 +65,7 @@ export const BILLING_PLAN_CATALOG: BillingPlanCatalogEntry[] = [
     monthlyPrice: 999,
     priceLabel: "$999/month",
     includedUsageLimit: 1000,
+    overagePrice: null,
     overagePriceLabel: "Custom",
     summary: "For high-volume merchants that need a custom rollout and higher limits.",
   },

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ParseStatus, SourceDocument, SourceDocumentKind } from "@prisma/client";
 import db from "../db.server";
 import { createAuditEvent } from "./audit.server";
 import {
@@ -7,7 +8,11 @@ import {
   type ParsedSpreadsheetRow,
 } from "./document-parser.server";
 import { processSourceDocument } from "./processing.server";
-import { persistSourceDocumentContent } from "./storage.server";
+import { advanceOnboardingStatus } from "./shop.server";
+import {
+  getStoredDocumentContentBase64,
+  persistSourceDocumentContent,
+} from "./storage.server";
 
 interface NormalizedInboundAttachment {
   filename?: string | null;
@@ -28,6 +33,23 @@ export interface NormalizedInboundEmailPayload {
   htmlBody?: string | null;
   attachments?: NormalizedInboundAttachment[];
 }
+
+interface PreparedSourceDocument {
+  sourceDocument: SourceDocument;
+  structuredRows: ParsedSpreadsheetRow[];
+}
+
+interface SourceDocumentCandidateScoreInput {
+  kind: SourceDocumentKind;
+  parseStatus: ParseStatus;
+  filename?: string | null;
+  extractedText?: string | null;
+  sequence?: number | null;
+  hasAttachments?: boolean;
+}
+
+const PRIMARY_FILENAME_HINT = /(po|purchase.?order|order|wholesale)/i;
+const SUPPORTING_FILENAME_HINT = /(packing|terms|conditions|instructions|readme|spec|invoice|receipt)/i;
 
 function normalizeEmailAddress(value: string | null | undefined) {
   if (!value) {
@@ -67,6 +89,19 @@ function inferMailboxRoutingKey(payload: NormalizedInboundEmailPayload) {
   return recipient.split("@")[0]?.toLowerCase() ?? "";
 }
 
+function buildAttachmentFingerprint(attachments: NormalizedInboundAttachment[] | null | undefined) {
+  return (attachments ?? [])
+    .map((attachment) => [
+      attachment.filename ?? "",
+      attachment.contentType ?? "",
+      String(attachment.contentLength ?? 0),
+      attachment.contentBase64
+        ? createHash("sha256").update(attachment.contentBase64).digest("hex")
+        : "",
+    ].join(":"))
+    .join("|");
+}
+
 function buildMessageHash(payload: NormalizedInboundEmailPayload) {
   return createHash("sha256")
     .update(
@@ -76,6 +111,7 @@ function buildMessageHash(payload: NormalizedInboundEmailPayload) {
         payload.subject || "",
         payload.date || "",
         payload.textBody || "",
+        buildAttachmentFingerprint(payload.attachments),
       ].join("|"),
     )
     .digest("hex");
@@ -89,6 +125,335 @@ function buildDocumentHash(contentBase64: string) {
 
 function createTextBodyBase64(textBody: string) {
   return Buffer.from(textBody, "utf8").toString("base64");
+}
+
+function hasTerminalOrderStatus(status: string | null | undefined) {
+  return status === "AUTO_DRAFTED" || status === "OPS_REVIEW" || status === "DUPLICATE";
+}
+
+export function scoreSourceDocumentCandidate(input: SourceDocumentCandidateScoreInput) {
+  let score = 0;
+
+  switch (input.kind) {
+    case "XLSX":
+      score += 520;
+      break;
+    case "CSV":
+      score += 500;
+      break;
+    case "PDF":
+      score += 420;
+      break;
+    case "IMAGE":
+      score += 390;
+      break;
+    case "TEXT":
+      score += 220;
+      break;
+    case "EMAIL_BODY":
+      score += input.hasAttachments ? 80 : 280;
+      break;
+  }
+
+  if (input.parseStatus === "PARSED") {
+    score += 50;
+  } else if (input.parseStatus === "FALLBACK_REQUIRED") {
+    score += 20;
+  } else if (input.parseStatus === "FAILED") {
+    score -= 160;
+  }
+
+  const extractedTextLength = input.extractedText?.trim().length ?? 0;
+  score += Math.min(extractedTextLength, 3000) / 100;
+  score -= Math.max(input.sequence ?? 0, 0) * 2;
+
+  if (PRIMARY_FILENAME_HINT.test(input.filename ?? "")) {
+    score += 40;
+  }
+
+  if (SUPPORTING_FILENAME_HINT.test(input.filename ?? "")) {
+    score -= 120;
+  }
+
+  return score;
+}
+
+function selectPrimarySourceDocument(documents: SourceDocument[]) {
+  const hasAttachments = documents.some((document) => document.kind !== "EMAIL_BODY");
+
+  return documents
+    .slice()
+    .sort((left, right) => {
+      const leftScore = scoreSourceDocumentCandidate({
+        kind: left.kind,
+        parseStatus: left.parseStatus,
+        filename: left.filename,
+        extractedText: left.extractedText,
+        sequence: left.sequence,
+        hasAttachments,
+      });
+      const rightScore = scoreSourceDocumentCandidate({
+        kind: right.kind,
+        parseStatus: right.parseStatus,
+        filename: right.filename,
+        extractedText: right.extractedText,
+        sequence: right.sequence,
+        hasAttachments,
+      });
+
+      return rightScore - leftScore || left.sequence - right.sequence;
+    })[0] ?? null;
+}
+
+async function createSourceDocumentsForMessage(input: {
+  inboundMessageId: string;
+  shopId: string;
+  textBody?: string | null;
+  attachments?: NormalizedInboundAttachment[];
+}) {
+  const documentInputs: Array<{
+    filename?: string | null;
+    contentType?: string | null;
+    contentBase64: string;
+    isEmailBody?: boolean;
+  }> = [];
+
+  if (input.textBody?.trim()) {
+    documentInputs.push({
+      filename: "email-body.txt",
+      contentType: "text/plain",
+      contentBase64: createTextBodyBase64(input.textBody),
+      isEmailBody: true,
+    });
+  }
+
+  for (const attachment of input.attachments ?? []) {
+    if (!attachment.contentBase64) {
+      continue;
+    }
+
+    documentInputs.push({
+      filename: attachment.filename ?? null,
+      contentType: attachment.contentType ?? null,
+      contentBase64: attachment.contentBase64,
+    });
+  }
+
+  const preparedDocuments: PreparedSourceDocument[] = [];
+
+  for (const [index, documentInput] of documentInputs.entries()) {
+    const kind = inferSourceDocumentKind({
+      filename: documentInput.filename,
+      contentType: documentInput.contentType,
+      isEmailBody: documentInput.isEmailBody,
+    });
+    const parsed = await parseDocumentContent({
+      kind,
+      contentBase64: documentInput.contentBase64,
+      textBody: documentInput.isEmailBody ? input.textBody ?? undefined : undefined,
+      filename: documentInput.filename,
+      contentType: documentInput.contentType,
+    });
+    const persistedContent = await persistSourceDocumentContent({
+      shopId: input.shopId,
+      inboundMessageId: input.inboundMessageId,
+      sequence: index,
+      filename: documentInput.filename,
+      contentType: documentInput.contentType,
+      contentBase64: documentInput.contentBase64,
+    });
+    const sourceDocument = await db.sourceDocument.create({
+      data: {
+        shopId: input.shopId,
+        inboundMessageId: input.inboundMessageId,
+        kind,
+        filename: documentInput.filename ?? undefined,
+        contentType: documentInput.contentType ?? undefined,
+        contentSize: Buffer.from(documentInput.contentBase64, "base64").byteLength,
+        contentHash: buildDocumentHash(documentInput.contentBase64),
+        storageProvider: persistedContent.storageProvider,
+        storageKey: persistedContent.storageKey ?? undefined,
+        contentBase64: persistedContent.contentBase64 ?? undefined,
+        extractedText: parsed.extractedText ?? undefined,
+        pageCount: parsed.pageCount ?? undefined,
+        parseStatus: parsed.parseStatus,
+        parseError: parsed.parseError ?? undefined,
+        sequence: index,
+      },
+    });
+
+    preparedDocuments.push({
+      sourceDocument,
+      structuredRows: parsed.structuredRows,
+    });
+  }
+
+  return preparedDocuments;
+}
+
+async function reparseSourceDocument(sourceDocument: SourceDocument, rawTextBody?: string | null) {
+  const contentBase64 = await getStoredDocumentContentBase64({
+    storageProvider: sourceDocument.storageProvider,
+    storageKey: sourceDocument.storageKey,
+    contentBase64: sourceDocument.contentBase64,
+  });
+
+  const parsed = await parseDocumentContent({
+    kind: sourceDocument.kind,
+    contentBase64,
+    textBody: sourceDocument.kind === "EMAIL_BODY" ? rawTextBody ?? undefined : undefined,
+    filename: sourceDocument.filename,
+    contentType: sourceDocument.contentType,
+  });
+
+  const refreshedDocument = await db.sourceDocument.update({
+    where: { id: sourceDocument.id },
+    data: {
+      extractedText: parsed.extractedText ?? undefined,
+      pageCount: parsed.pageCount ?? undefined,
+      parseStatus: parsed.parseStatus,
+      parseError: parsed.parseError ?? undefined,
+    },
+  });
+
+  return {
+    sourceDocument: refreshedDocument,
+    structuredRows: parsed.structuredRows,
+  } satisfies PreparedSourceDocument;
+}
+
+function buildSupplementalText(input: {
+  subject?: string | null;
+  rawTextBody?: string | null;
+  primarySourceDocument: SourceDocument;
+}) {
+  const parts = [
+    input.subject?.trim() ? `Subject: ${input.subject.trim()}` : null,
+    input.primarySourceDocument.kind === "EMAIL_BODY" ? null : input.rawTextBody?.trim() || null,
+  ].filter((value): value is string => Boolean(value));
+
+  return parts.join("\n\n").slice(0, 4000) || null;
+}
+
+async function syncInboundMessageState(inboundMessageId: string, incrementAttempt: boolean) {
+  const latestOrder = await db.purchaseOrder.findFirst({
+    where: { inboundMessageId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return db.inboundMessage.update({
+    where: { id: inboundMessageId },
+    data: {
+      status: latestOrder?.status === "AUTO_DRAFTED"
+        ? "AUTO_DRAFTED"
+        : latestOrder?.status === "OPS_REVIEW" || latestOrder?.status === "DUPLICATE"
+          ? "OPS_REVIEW"
+          : latestOrder
+            ? "PARSED"
+            : "FAILED",
+      processingAttempts: incrementAttempt
+        ? {
+            increment: 1,
+          }
+        : undefined,
+      lastProcessedAt: incrementAttempt ? new Date() : undefined,
+      lastError: null,
+    },
+  });
+}
+
+async function processInboundMessage(input: {
+  inboundMessageId: string;
+  shopId: string;
+  shopDomain: string;
+  mailboxId: string;
+  senderProfileId: string;
+  preparedDocuments?: PreparedSourceDocument[];
+}) {
+  const inboundMessage = await db.inboundMessage.findUniqueOrThrow({
+    where: { id: input.inboundMessageId },
+    include: {
+      sourceDocuments: {
+        orderBy: { sequence: "asc" },
+      },
+    },
+  });
+
+  const primarySourceDocument = selectPrimarySourceDocument(inboundMessage.sourceDocuments);
+
+  if (!primarySourceDocument) {
+    await db.inboundMessage.update({
+      where: { id: input.inboundMessageId },
+      data: {
+        status: "FAILED",
+        processingAttempts: {
+          increment: 1,
+        },
+        lastProcessedAt: new Date(),
+        lastError: "No parseable source document was stored for this email.",
+      },
+    });
+
+    return null;
+  }
+
+  const existingOrder = await db.purchaseOrder.findUnique({
+    where: { sourceDocumentId: primarySourceDocument.id },
+    select: { id: true, status: true },
+  });
+
+  if (existingOrder && hasTerminalOrderStatus(existingOrder.status)) {
+    await syncInboundMessageState(input.inboundMessageId, false);
+    return existingOrder;
+  }
+
+  const senderProfile = await db.senderProfile.findUniqueOrThrow({
+    where: { id: input.senderProfileId },
+  });
+
+  const preparedDocument =
+    input.preparedDocuments?.find(
+      (document) => document.sourceDocument.id === primarySourceDocument.id,
+    ) ??
+    await reparseSourceDocument(primarySourceDocument, inboundMessage.rawTextBody);
+
+  try {
+    const order = await processSourceDocument({
+      shopId: input.shopId,
+      shopDomain: input.shopDomain,
+      inboundMessageId: input.inboundMessageId,
+      mailboxId: input.mailboxId,
+      senderProfile,
+      sourceDocument: preparedDocument.sourceDocument,
+      structuredRows: preparedDocument.structuredRows,
+      supplementalText: buildSupplementalText({
+        subject: inboundMessage.subject,
+        rawTextBody: inboundMessage.rawTextBody,
+        primarySourceDocument: preparedDocument.sourceDocument,
+      }),
+      existingPurchaseOrderId: existingOrder?.id ?? undefined,
+    });
+
+    await syncInboundMessageState(input.inboundMessageId, true);
+    return order;
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Inbound message processing failed.";
+
+    await db.inboundMessage.update({
+      where: { id: input.inboundMessageId },
+      data: {
+        status: "FAILED",
+        processingAttempts: {
+          increment: 1,
+        },
+        lastProcessedAt: new Date(),
+        lastError: errorMessage,
+      },
+    });
+
+    throw error;
+  }
 }
 
 export async function handleInboundEmail(payload: NormalizedInboundEmailPayload) {
@@ -115,22 +480,6 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
   const senderName = normalizeSenderName(payload);
   const dedupeHash = buildMessageHash(payload);
 
-  const existingMessage = await db.inboundMessage.findUnique({
-    where: {
-      shopId_dedupeHash: {
-        shopId: mailbox.shopId,
-        dedupeHash,
-      },
-    },
-  });
-
-  if (existingMessage) {
-    return {
-      inboundMessageId: existingMessage.id,
-      deduped: true,
-    };
-  }
-
   const senderProfile = await db.senderProfile.upsert({
     where: {
       shopId_senderEmail: {
@@ -156,156 +505,74 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
     },
   });
 
-  const inboundMessage = await db.inboundMessage.create({
-    data: {
-      shopId: mailbox.shopId,
-      mailboxId: mailbox.id,
-      externalMessageId: payload.messageId ?? undefined,
-      dedupeHash,
-      senderEmail,
-      senderName: senderName ?? undefined,
-      subject: payload.subject ?? undefined,
-      rawTextBody: payload.textBody ?? undefined,
-      rawHtmlBody: payload.htmlBody ?? undefined,
-      receivedAt: new Date(payload.date || Date.now()),
+  let inboundMessage = await db.inboundMessage.findUnique({
+    where: {
+      shopId_dedupeHash: {
+        shopId: mailbox.shopId,
+        dedupeHash,
+      },
     },
   });
 
-  const documentInputs: Array<{
-    filename?: string | null;
-    contentType?: string | null;
-    contentBase64: string;
-    isEmailBody?: boolean;
-  }> = [];
+  let deduped = false;
+  let preparedDocuments: PreparedSourceDocument[] | undefined;
 
-  if (payload.textBody?.trim()) {
-    documentInputs.push({
-      filename: "email-body.txt",
-      contentType: "text/plain",
-      contentBase64: createTextBodyBase64(payload.textBody),
-      isEmailBody: true,
-    });
-  }
-
-  for (const attachment of payload.attachments ?? []) {
-    if (!attachment.contentBase64) {
-      continue;
-    }
-
-    documentInputs.push({
-      filename: attachment.filename ?? null,
-      contentType: attachment.contentType ?? null,
-      contentBase64: attachment.contentBase64,
-    });
-  }
-
-  const createdDocuments: Array<{
-    documentId: string;
-    structuredRows: ParsedSpreadsheetRow[];
-  }> = [];
-
-  for (const [index, documentInput] of documentInputs.entries()) {
-    const kind = inferSourceDocumentKind({
-      filename: documentInput.filename,
-      contentType: documentInput.contentType,
-      isEmailBody: documentInput.isEmailBody,
-    });
-    const parsed = await parseDocumentContent({
-      kind,
-      contentBase64: documentInput.contentBase64,
-      textBody: documentInput.isEmailBody ? payload.textBody ?? undefined : undefined,
-    });
-    const persistedContent = await persistSourceDocumentContent({
-      shopId: mailbox.shopId,
-      inboundMessageId: inboundMessage.id,
-      sequence: index,
-      filename: documentInput.filename,
-      contentType: documentInput.contentType,
-      contentBase64: documentInput.contentBase64,
-    });
-    const document = await db.sourceDocument.create({
+  if (!inboundMessage) {
+    inboundMessage = await db.inboundMessage.create({
       data: {
         shopId: mailbox.shopId,
-        inboundMessageId: inboundMessage.id,
-        kind,
-        filename: documentInput.filename ?? undefined,
-        contentType: documentInput.contentType ?? undefined,
-        contentSize: Buffer.from(documentInput.contentBase64, "base64").byteLength,
-        contentHash: buildDocumentHash(documentInput.contentBase64),
-        storageProvider: persistedContent.storageProvider,
-        storageKey: persistedContent.storageKey ?? undefined,
-        contentBase64: persistedContent.contentBase64 ?? undefined,
-        extractedText: parsed.extractedText ?? undefined,
-        pageCount: parsed.pageCount ?? undefined,
-        parseStatus: parsed.parseStatus,
-        parseError: parsed.parseError ?? undefined,
-        sequence: index,
+        mailboxId: mailbox.id,
+        externalMessageId: payload.messageId ?? undefined,
+        dedupeHash,
+        senderEmail,
+        senderName: senderName ?? undefined,
+        subject: payload.subject ?? undefined,
+        rawTextBody: payload.textBody ?? undefined,
+        rawHtmlBody: payload.htmlBody ?? undefined,
+        receivedAt: new Date(payload.date || Date.now()),
       },
     });
 
-    createdDocuments.push({
-      documentId: document.id,
-      structuredRows: parsed.structuredRows,
-    });
-  }
-
-  await db.mailbox.update({
-    where: { id: mailbox.id },
-    data: { lastInboundAt: inboundMessage.receivedAt },
-  });
-
-  await createAuditEvent({
-    shopId: mailbox.shopId,
-    entityType: "MESSAGE",
-    entityId: inboundMessage.id,
-    action: "INBOUND_EMAIL_RECEIVED",
-    summary: `Received PO email from ${senderEmail}.`,
-    metadata: {
-      subject: payload.subject ?? null,
-      attachmentCount: payload.attachments?.length ?? 0,
-    },
-  });
-
-  for (const createdDocument of createdDocuments) {
-    const sourceDocument = await db.sourceDocument.findUniqueOrThrow({
-      where: { id: createdDocument.documentId },
-    });
-
-    await processSourceDocument({
-      shopId: mailbox.shopId,
-      shopDomain: mailbox.shop.shopDomain,
+    preparedDocuments = await createSourceDocumentsForMessage({
       inboundMessageId: inboundMessage.id,
-      mailboxId: mailbox.id,
-      senderProfile,
-      sourceDocument,
-      structuredRows: createdDocument.structuredRows,
+      shopId: mailbox.shopId,
+      textBody: payload.textBody,
+      attachments: payload.attachments,
     });
+
+    await db.mailbox.update({
+      where: { id: mailbox.id },
+      data: { lastInboundAt: inboundMessage.receivedAt },
+    });
+
+    await createAuditEvent({
+      shopId: mailbox.shopId,
+      entityType: "MESSAGE",
+      entityId: inboundMessage.id,
+      action: "INBOUND_EMAIL_RECEIVED",
+      summary: `Received PO email from ${senderEmail}.`,
+      metadata: {
+        subject: payload.subject ?? null,
+        attachmentCount: payload.attachments?.length ?? 0,
+      },
+    });
+
+    await advanceOnboardingStatus(mailbox.shopId, "SAMPLE_RECEIVED");
+  } else {
+    deduped = true;
   }
 
-  const latestOrder = await db.purchaseOrder.findFirst({
-    where: { inboundMessageId: inboundMessage.id },
-    orderBy: { createdAt: "desc" },
-  });
-
-  await db.inboundMessage.update({
-    where: { id: inboundMessage.id },
-    data: {
-      status: latestOrder?.status === "AUTO_DRAFTED"
-        ? "AUTO_DRAFTED"
-        : latestOrder?.status === "OPS_REVIEW" || latestOrder?.status === "DUPLICATE"
-          ? "OPS_REVIEW"
-          : latestOrder
-            ? "PARSED"
-            : "FAILED",
-      processingAttempts: {
-        increment: 1,
-      },
-      lastProcessedAt: new Date(),
-    },
+  await processInboundMessage({
+    inboundMessageId: inboundMessage.id,
+    shopId: mailbox.shopId,
+    shopDomain: mailbox.shop.shopDomain,
+    mailboxId: mailbox.id,
+    senderProfileId: senderProfile.id,
+    preparedDocuments,
   });
 
   return {
     inboundMessageId: inboundMessage.id,
-    deduped: false,
+    deduped,
   };
 }

@@ -29,6 +29,7 @@ interface ActiveSubscription {
   createdAt: string;
   currentPeriodEnd: string | null;
   lineItems: Array<{
+    id: string;
     plan?: {
       pricingDetails?: {
         __typename?: string;
@@ -36,6 +37,11 @@ interface ActiveSubscription {
           amount?: string;
           currencyCode?: string;
         };
+        cappedAmount?: {
+          amount?: string;
+          currencyCode?: string;
+        };
+        terms?: string | null;
       } | null;
     } | null;
   }>;
@@ -58,6 +64,18 @@ interface BillingRequestMutationResponse {
   data?: {
     appSubscriptionCreate?: {
       confirmationUrl?: string | null;
+      userErrors?: BillingMutationError[];
+    } | null;
+  };
+  errors?: Array<{ message?: string }>;
+}
+
+interface UsageRecordMutationResponse {
+  data?: {
+    appUsageRecordCreate?: {
+      appUsageRecord?: {
+        id: string;
+      } | null;
       userErrors?: BillingMutationError[];
     } | null;
   };
@@ -152,6 +170,22 @@ export async function requestOfflineBillingConfirmation(input: {
   }
 
   const { admin } = await unauthenticated.admin(input.shopDomain);
+  const usageLineItems =
+    plan.overagePrice === null
+      ? []
+      : [
+          {
+            plan: {
+              appUsagePricingDetails: {
+                cappedAmount: {
+                  amount: Math.max(plan.monthlyPrice, 500),
+                  currencyCode: "USD",
+                },
+                terms: `${plan.overagePriceLabel} beyond the included successful PO volume each billing period.`,
+              },
+            },
+          },
+        ];
   const response = await admin.graphql(
     `#graphql
       mutation DraftBridgeCreateSubscription(
@@ -193,6 +227,7 @@ export async function requestOfflineBillingConfirmation(input: {
               },
             },
           },
+          ...usageLineItems,
         ],
       },
     },
@@ -298,27 +333,35 @@ async function queryActiveSubscriptions(admin: AdminGraphqlClient) {
     `#graphql
       query DraftBridgeBillingStatus {
         currentAppInstallation {
-          activeSubscriptions {
-            id
-            name
-            status
-            trialDays
-            createdAt
-            currentPeriodEnd
-            lineItems {
-              plan {
-                pricingDetails {
-                  __typename
-                  ... on AppRecurringPricing {
-                    price {
-                      amount
-                      currencyCode
-                    }
-                  }
+      activeSubscriptions {
+        id
+        name
+        status
+        trialDays
+        createdAt
+        currentPeriodEnd
+        lineItems {
+          id
+          plan {
+            pricingDetails {
+              __typename
+              ... on AppRecurringPricing {
+                price {
+                  amount
+                  currencyCode
                 }
+              }
+              ... on AppUsagePricing {
+                cappedAmount {
+                  amount
+                  currencyCode
+                }
+                terms
               }
             }
           }
+        }
+      }
         }
       }`,
   );
@@ -458,4 +501,91 @@ export async function getBillingUiState(shopId: string, billingState: BillingSta
     trialDaysRemaining: getTrialDaysRemaining(billingState),
     isTestMode: getBillingTestMode(),
   };
+}
+
+function getUsageLineItemId(subscription: ActiveSubscription | null) {
+  if (!subscription) {
+    return null;
+  }
+
+  const lineItem = subscription.lineItems.find(
+    (entry) => entry.plan?.pricingDetails?.__typename === "AppUsagePricing",
+  );
+
+  return lineItem?.id ?? null;
+}
+
+export async function recordOverageUsageCharge(input: {
+  shopDomain: string;
+  billingPlan: PaidBillingPlan;
+  usageLedgerId: string;
+  description: string;
+}) {
+  const plan = getPlanCatalogEntry(input.billingPlan);
+
+  if (!plan?.overagePrice) {
+    return null;
+  }
+
+  const { admin } = await unauthenticated.admin(input.shopDomain);
+  const activeSubscriptions = await queryActiveSubscriptions(admin);
+  const subscription = pickSubscription(activeSubscriptions);
+  const subscriptionLineItemId = getUsageLineItemId(subscription);
+
+  if (!subscriptionLineItemId) {
+    return null;
+  }
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation DraftBridgeCreateUsageRecord(
+        $description: String!
+        $idempotencyKey: String!
+        $price: MoneyInput!
+        $subscriptionLineItemId: ID!
+      ) {
+        appUsageRecordCreate(
+          description: $description
+          idempotencyKey: $idempotencyKey
+          price: $price
+          subscriptionLineItemId: $subscriptionLineItemId
+        ) {
+          appUsageRecord {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }`,
+    {
+      variables: {
+        description: input.description,
+        idempotencyKey: input.usageLedgerId,
+        price: {
+          amount: plan.overagePrice,
+          currencyCode: "USD",
+        },
+        subscriptionLineItemId,
+      },
+    },
+  );
+
+  const payload = (await response.json()) as UsageRecordMutationResponse;
+  const graphqlError = payload.errors?.find((error) => error.message)?.message;
+
+  if (graphqlError) {
+    throw new Error(graphqlError);
+  }
+
+  const userError = payload.data?.appUsageRecordCreate?.userErrors?.find(
+    (error) => error.message,
+  );
+
+  if (userError) {
+    throw new Error(userError.message);
+  }
+
+  return payload.data?.appUsageRecordCreate?.appUsageRecord?.id ?? null;
 }

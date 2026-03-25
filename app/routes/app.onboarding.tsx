@@ -35,7 +35,7 @@ export default function OnboardingRoute() {
         </s-card>
         <s-card heading="3. Confirm the result">
           <s-paragraph>
-            High-confidence POs will create Shopify draft orders automatically. Lower-confidence POs will stay in the internal ops queue.
+            High-confidence POs will create Shopify draft orders automatically. Lower-confidence POs will stay in review until DraftBridge ops resolves them or you add clarification from the order detail page.
           </s-paragraph>
           <s-paragraph>Current onboarding status: {shop.onboardingStatus}</s-paragraph>
         </s-card>

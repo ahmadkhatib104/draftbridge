@@ -22,9 +22,11 @@ services:
       - key: SHOPIFY_API_SECRET
         sync: false
       - key: OPENAI_PRIMARY_MODEL
-        value: gpt-4o-mini
+        value: gpt-5.4-mini
+      - key: OPENAI_OCR_MODEL
+        value: gpt-5.4
       - key: OPENAI_RETRY_MODEL
-        value: gpt-4.1-mini
+        value: gpt-5.4
       - key: OPENAI_API_KEY
         sync: false
       - key: EMAIL_ROUTING_DOMAIN

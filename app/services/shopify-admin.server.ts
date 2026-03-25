@@ -19,6 +19,7 @@ function isRecoverableShopifyReadError(error: unknown) {
 
   return (
     message.includes("No Shopify session is available") ||
+    message.includes("Could not find a session for shop") ||
     message.includes("Shopify GraphQL request failed with 401") ||
     message.includes("Customer object") ||
     message.includes("protected-customer-data") ||
@@ -270,6 +271,54 @@ export async function createDraftOrder(input: {
   }
 
   return draftOrder;
+}
+
+export async function getVariantByLegacyId(shopDomain: string, legacyId: string) {
+  const payload = await adminGraphql<{
+    data?: {
+      productVariant?: {
+        id: string;
+        legacyResourceId: string;
+        sku?: string | null;
+        title: string;
+        price?: string | null;
+        product?: { title?: string | null } | null;
+      } | null;
+    };
+  }>(
+    shopDomain,
+    `#graphql
+      query DraftBridgeVariantById($id: ID!) {
+        productVariant(id: $id) {
+          id
+          legacyResourceId
+          sku
+          title
+          price
+          product {
+            title
+          }
+        }
+      }`,
+    {
+      id: toShopifyGid("ProductVariant", legacyId),
+    },
+  );
+
+  const variant = payload.data?.productVariant;
+
+  if (!variant) {
+    return null;
+  }
+
+  return {
+    gid: variant.id,
+    legacyId: String(variant.legacyResourceId),
+    sku: variant.sku ?? null,
+    title: variant.title,
+    productTitle: variant.product?.title ?? variant.title,
+    price: variant.price ? Number(variant.price) : null,
+  } satisfies VariantMatchCandidate;
 }
 
 function toShopifyGid(resource: "Customer" | "ProductVariant", value: string) {

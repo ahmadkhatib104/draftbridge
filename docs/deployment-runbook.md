@@ -13,6 +13,7 @@
    - `EMAIL_INGEST_SHARED_SECRET`
    - `OPENAI_API_KEY`
    - `OPENAI_PRIMARY_MODEL`
+   - `OPENAI_OCR_MODEL`
    - `OPENAI_RETRY_MODEL`
    - `R2_ACCOUNT_ID`
    - `R2_ACCESS_KEY_ID`
@@ -40,3 +41,8 @@
 3. Set the Worker `INGEST_ENDPOINT` to `https://your-app-host.example.com/webhooks/inbound-email`.
 4. Set the Worker secret and Render `EMAIL_INGEST_SHARED_SECRET` to the same value.
 5. Send a sample email with PDF and spreadsheet attachments.
+
+Recommended baseline:
+- `OPENAI_PRIMARY_MODEL=gpt-5.4-mini`
+- `OPENAI_OCR_MODEL=gpt-5.4`
+- `OPENAI_RETRY_MODEL=gpt-5.4`

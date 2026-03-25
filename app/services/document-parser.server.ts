@@ -1,6 +1,8 @@
+import OpenAI from "openai";
 import pdf from "pdf-parse";
 import * as XLSX from "xlsx";
 import type { ParseStatus, SourceDocumentKind } from "@prisma/client";
+import { hasOpenAiConfig } from "../lib/env.server";
 
 export interface ParsedSpreadsheetRow {
   [key: string]: string;
@@ -15,8 +17,24 @@ export interface ParsedDocumentContent {
   structuredRows: ParsedSpreadsheetRow[];
 }
 
+let openAiClient: OpenAI | null = null;
+
 function toUtf8Text(contentBase64: string) {
   return Buffer.from(contentBase64, "base64").toString("utf8");
+}
+
+function getOpenAiClient() {
+  if (!hasOpenAiConfig()) {
+    return null;
+  }
+
+  if (!openAiClient) {
+    openAiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+
+  return openAiClient;
 }
 
 function normalizeCell(value: unknown) {
@@ -81,10 +99,79 @@ function parseSpreadsheet(buffer: Buffer) {
   };
 }
 
+function buildDataUrl(contentType: string, contentBase64: string) {
+  return `data:${contentType};base64,${contentBase64}`;
+}
+
+async function extractTextWithOpenAi(input: {
+  kind: SourceDocumentKind;
+  contentBase64: string;
+  contentType?: string | null;
+  filename?: string | null;
+}) {
+  const client = getOpenAiClient();
+
+  if (!client) {
+    return null;
+  }
+
+  const contentType =
+    input.contentType?.trim() ||
+    (input.kind === "PDF" ? "application/pdf" : "image/png");
+  const model =
+    process.env.OPENAI_OCR_MODEL?.trim() ||
+    process.env.OPENAI_PRIMARY_MODEL?.trim() ||
+    "gpt-5.4";
+
+  try {
+    const response = await client.responses.create({
+      model,
+      input: [
+        {
+          role: "system",
+          content:
+            "Extract the raw text from wholesale purchase order documents. Preserve line breaks, table rows, and labels. Return only plain text.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Extract every visible field and table cell as plain text. Do not summarize.",
+            },
+            input.kind === "IMAGE"
+              ? {
+                  type: "input_image",
+                  detail: "high",
+                  image_url: buildDataUrl(contentType, input.contentBase64),
+                }
+              : {
+                  type: "input_file",
+                  filename: input.filename ?? "document.pdf",
+                  file_data: buildDataUrl(contentType, input.contentBase64),
+                },
+          ],
+        },
+      ],
+    });
+
+    return response.output_text.trim() || null;
+  } catch (error) {
+    console.error("OpenAI OCR fallback failed", {
+      kind: input.kind,
+      filename: input.filename ?? null,
+      error,
+    });
+    return null;
+  }
+}
+
 export async function parseDocumentContent(input: {
   kind: SourceDocumentKind;
   contentBase64?: string | null;
   textBody?: string | null;
+  filename?: string | null;
+  contentType?: string | null;
 }) {
   if (input.kind === "EMAIL_BODY" || input.kind === "TEXT") {
     const extractedText = input.textBody?.trim() || null;
@@ -130,11 +217,29 @@ export async function parseDocumentContent(input: {
       const parsed = await pdf(buffer);
       const extractedText = parsed.text?.trim() || null;
 
+      if (extractedText) {
+        return {
+          kind: input.kind,
+          extractedText,
+          parseStatus: "PARSED",
+          parseError: null,
+          pageCount: parsed.numpages || null,
+          structuredRows: [],
+        } satisfies ParsedDocumentContent;
+      }
+
+      const ocrText = await extractTextWithOpenAi({
+        kind: input.kind,
+        contentBase64: input.contentBase64,
+        contentType: input.contentType,
+        filename: input.filename,
+      });
+
       return {
         kind: input.kind,
-        extractedText,
-        parseStatus: extractedText ? "PARSED" : "FALLBACK_REQUIRED",
-        parseError: extractedText ? null : "PDF did not expose extractable text.",
+        extractedText: ocrText,
+        parseStatus: ocrText ? "PARSED" : "FALLBACK_REQUIRED",
+        parseError: ocrText ? null : "PDF did not expose extractable text.",
         pageCount: parsed.numpages || null,
         structuredRows: [],
       } satisfies ParsedDocumentContent;
@@ -151,11 +256,18 @@ export async function parseDocumentContent(input: {
   }
 
   if (input.kind === "IMAGE") {
+    const ocrText = await extractTextWithOpenAi({
+      kind: input.kind,
+      contentBase64: input.contentBase64,
+      contentType: input.contentType,
+      filename: input.filename,
+    });
+
     return {
       kind: input.kind,
-      extractedText: null,
-      parseStatus: "FALLBACK_REQUIRED",
-      parseError: "Image-only documents require AI fallback.",
+      extractedText: ocrText,
+      parseStatus: ocrText ? "PARSED" : "FALLBACK_REQUIRED",
+      parseError: ocrText ? null : "Image-only documents require AI fallback.",
       pageCount: 1,
       structuredRows: [],
     } satisfies ParsedDocumentContent;

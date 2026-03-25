@@ -21,6 +21,7 @@
 - `EMAIL_INGEST_SHARED_SECRET`
 - `OPENAI_API_KEY`
 - `OPENAI_PRIMARY_MODEL`
+- `OPENAI_OCR_MODEL`
 - `OPENAI_RETRY_MODEL`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
@@ -48,4 +49,5 @@ https://your-app-host.example.com/webhooks/inbound-email
 
 - If `R2_*` vars are missing, DraftBridge falls back to storing source document content in the database.
 - If `OPENAI_API_KEY` is missing, DraftBridge uses deterministic extraction only and routes weak documents to ops review.
+- Recommended defaults: `OPENAI_PRIMARY_MODEL=gpt-5.4-mini` for the main low-latency extraction path, with `OPENAI_OCR_MODEL=gpt-5.4` and `OPENAI_RETRY_MODEL=gpt-5.4` reserved for scanned-document OCR and higher-accuracy retries.
 - DraftBridge does not expose email-forwarding claims publicly until the Cloudflare routing domain is purchased, verified, and routed to the Worker.

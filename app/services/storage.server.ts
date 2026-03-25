@@ -1,5 +1,6 @@
 import {
   DeleteObjectsCommand,
+  GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -115,4 +116,35 @@ export async function purgeShopDocumentPrefix(shopId: string) {
   } while (continuationToken);
 
   return deletedCount;
+}
+
+export async function getStoredDocumentContentBase64(input: {
+  storageProvider: string;
+  storageKey?: string | null;
+  contentBase64?: string | null;
+}) {
+  if (input.storageProvider === "database") {
+    return input.contentBase64 ?? null;
+  }
+
+  const client = getR2Client();
+
+  if (!client || !input.storageKey) {
+    return null;
+  }
+
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET!,
+      Key: input.storageKey,
+    }),
+  );
+
+  const bytes = await response.Body?.transformToByteArray();
+
+  if (!bytes) {
+    return null;
+  }
+
+  return Buffer.from(bytes).toString("base64");
 }

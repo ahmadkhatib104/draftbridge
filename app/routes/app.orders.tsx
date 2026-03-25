@@ -53,6 +53,9 @@ export default function OrdersRoute() {
                       ? `Ops case ${order.opsCase.status}`
                       : "Pending"}
                 </s-paragraph>
+                {order.clarificationNeeded ? (
+                  <s-paragraph>Clarification can be added from the order detail page.</s-paragraph>
+                ) : null}
                 <s-paragraph>
                   <Link to={`/app/orders/${order.id}`}>Open details</Link>
                 </s-paragraph>

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { MailboxProvider, Prisma } from "@prisma/client";
+import { MailboxProvider, OnboardingStatus, Prisma } from "@prisma/client";
 import db from "../db.server";
 import { getIncludedUsageLimit } from "../lib/billing";
 import { requireEmailRoutingDomain } from "../lib/env.server";
@@ -20,6 +20,13 @@ function normalizeRoutingKey(value: string) {
 function buildForwardingAddress(routingKey: string) {
   return `${routingKey}@${requireEmailRoutingDomain()}`;
 }
+
+const ONBOARDING_STATUS_ORDER: OnboardingStatus[] = [
+  "INSTALL_STARTED",
+  "MAILBOX_CREATED",
+  "SAMPLE_RECEIVED",
+  "READY",
+];
 
 async function createPrimaryMailbox(shopId: string, shopDomain: string) {
   let routingKey = normalizeRoutingKey(shopDomain);
@@ -207,6 +214,29 @@ export async function getPrimaryMailbox(shopId: string) {
   return db.mailbox.findFirstOrThrow({
     where: { shopId, isPrimary: true },
     orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function advanceOnboardingStatus(shopId: string, nextStatus: OnboardingStatus) {
+  const shop = await db.shop.findUnique({
+    where: { id: shopId },
+    select: { onboardingStatus: true },
+  });
+
+  if (!shop) {
+    return null;
+  }
+
+  const currentIndex = ONBOARDING_STATUS_ORDER.indexOf(shop.onboardingStatus);
+  const nextIndex = ONBOARDING_STATUS_ORDER.indexOf(nextStatus);
+
+  if (nextIndex <= currentIndex) {
+    return shop;
+  }
+
+  return db.shop.update({
+    where: { id: shopId },
+    data: { onboardingStatus: nextStatus },
   });
 }
 
