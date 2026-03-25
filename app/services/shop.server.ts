@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { MailboxProvider, Prisma } from "@prisma/client";
 import db from "../db.server";
 import { getIncludedUsageLimit } from "../lib/billing";
-import { getEmailRoutingDomain } from "../lib/env.server";
+import { requireEmailRoutingDomain } from "../lib/env.server";
 import { createAuditEvent } from "./audit.server";
 import { upsertBillingStateSafely } from "./billing.server";
 
@@ -18,7 +18,7 @@ function normalizeRoutingKey(value: string) {
 }
 
 function buildForwardingAddress(routingKey: string) {
-  return `${routingKey}@${getEmailRoutingDomain()}`;
+  return `${routingKey}@${requireEmailRoutingDomain()}`;
 }
 
 async function createPrimaryMailbox(shopId: string, shopDomain: string) {
@@ -32,7 +32,7 @@ async function createPrimaryMailbox(shopId: string, shopDomain: string) {
           provider: MailboxProvider.CLOUDFLARE_EMAIL_ROUTING,
           routingKey,
           forwardingAddress: buildForwardingAddress(routingKey),
-          inboundDomain: getEmailRoutingDomain(),
+          inboundDomain: requireEmailRoutingDomain(),
         },
       });
     } catch (error) {
@@ -52,7 +52,7 @@ async function createPrimaryMailbox(shopId: string, shopDomain: string) {
 }
 
 async function syncPrimaryMailboxDomain(shopId: string, mailboxId: string, routingKey: string) {
-  const expectedInboundDomain = getEmailRoutingDomain();
+  const expectedInboundDomain = requireEmailRoutingDomain();
   const expectedForwardingAddress = buildForwardingAddress(routingKey);
 
   const mailbox = await db.mailbox.update({
@@ -118,7 +118,7 @@ export async function ensureShopRecord(
       metadata: { forwardingAddress: mailbox.forwardingAddress },
     });
   } else {
-    const expectedInboundDomain = getEmailRoutingDomain();
+    const expectedInboundDomain = requireEmailRoutingDomain();
     const expectedForwardingAddress = buildForwardingAddress(mailbox.routingKey);
 
     if (

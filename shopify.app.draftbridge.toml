@@ -2,12 +2,11 @@
 
 client_id = "01577859d7f63cc66f4f953ea240f48b"
 name = "DraftBridge"
-application_url = "https://example.com"
+application_url = "https://draftbridge.onrender.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
@@ -17,4 +16,7 @@ api_version = "2026-04"
 scopes = "read_customers,read_products,write_draft_orders"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://draftbridge.onrender.com/auth/callback",
+  "https://draftbridge.onrender.com/auth/shopify/callback",
+]

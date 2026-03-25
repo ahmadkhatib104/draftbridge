@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "replace-me"
+client_id = "01577859d7f63cc66f4f953ea240f48b"
 name = "DraftBridge"
-application_url = "https://your-draftbridge-host.example.com"
+application_url = "https://draftbridge.onrender.com"
 embedded = true
 
 [build]
@@ -29,6 +29,6 @@ scopes = "read_products,read_customers,write_draft_orders"
 
 [auth]
 redirect_urls = [
-  "https://your-draftbridge-host.example.com/auth/callback",
-  "https://your-draftbridge-host.example.com/auth/shopify/callback",
+  "https://draftbridge.onrender.com/auth/callback",
+  "https://draftbridge.onrender.com/auth/shopify/callback",
 ]

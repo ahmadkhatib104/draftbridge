@@ -38,6 +38,34 @@ function averageConfidence(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+async function getUsageEventType(shopId: string) {
+  const billingState = await db.billingState.findUnique({
+    where: { shopId },
+    select: {
+      includedUsageLimit: true,
+      currentPeriodStart: true,
+    },
+  });
+
+  const usageCount = await db.usageLedger.count({
+    where: {
+      shopId,
+      billable: true,
+      ...(billingState?.currentPeriodStart
+        ? {
+            occurredAt: {
+              gte: billingState.currentPeriodStart,
+            },
+          }
+        : {}),
+    },
+  });
+
+  return usageCount < (billingState?.includedUsageLimit ?? 0)
+    ? "INCLUDED_SUCCESS"
+    : "OVERAGE_SUCCESS";
+}
+
 async function extractWithOpenAi(input: {
   text: string;
   model: string;
@@ -577,10 +605,7 @@ export async function processSourceDocument(input: {
       data: {
         shopId: input.shopId,
         purchaseOrderId: purchaseOrder.id,
-        eventType:
-          finalConfidence <= 1
-            ? "INCLUDED_SUCCESS"
-            : "OVERAGE_SUCCESS",
+        eventType: await getUsageEventType(input.shopId),
       },
     });
 

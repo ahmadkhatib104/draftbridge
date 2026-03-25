@@ -18,10 +18,14 @@ import {
 const prisma = new PrismaClient();
 
 async function main() {
-  const shop = await prisma.shop.upsert({
+  const seedInboundDomain = process.env.EMAIL_ROUTING_DOMAIN?.trim() || "example.com";
+
+  await prisma.shop.deleteMany({
     where: { shopDomain: "demo-wholesale.myshopify.com" },
-    update: {},
-    create: {
+  });
+
+  const shop = await prisma.shop.create({
+    data: {
       shopDomain: "demo-wholesale.myshopify.com",
       name: "Demo Wholesale Co.",
       email: "ops@demowholesale.example",
@@ -30,15 +34,13 @@ async function main() {
     },
   });
 
-  const mailbox = await prisma.mailbox.upsert({
-    where: { routingKey: "demo-wholesale" },
-    update: {},
-    create: {
+  const mailbox = await prisma.mailbox.create({
+    data: {
       shopId: shop.id,
       provider: MailboxProvider.CLOUDFLARE_EMAIL_ROUTING,
       routingKey: "demo-wholesale",
-      forwardingAddress: "demo-wholesale@mail.example.com",
-      inboundDomain: "mail.example.com",
+      forwardingAddress: `demo-wholesale@${seedInboundDomain}`,
+      inboundDomain: seedInboundDomain,
       senderHint: "Forward retailer POs here",
     },
   });

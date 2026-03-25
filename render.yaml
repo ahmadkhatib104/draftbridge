@@ -8,7 +8,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SHOPIFY_APP_URL
-        value: https://your-draftbridge-host.example.com
+        sync: false
       - key: SHOPIFY_BILLING_TEST_MODE
         value: "true"
       - key: SCOPES

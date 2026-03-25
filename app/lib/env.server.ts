@@ -4,8 +4,8 @@ function normalizeUrl(value: string | null | undefined) {
 
 export function getAppUrl() {
   return (
-    normalizeUrl(process.env.SHOPIFY_APP_URL) ||
-    normalizeUrl(process.env.RENDER_EXTERNAL_URL)
+    normalizeUrl(process.env.RENDER_EXTERNAL_URL) ||
+    normalizeUrl(process.env.SHOPIFY_APP_URL)
   );
 }
 
@@ -20,7 +20,17 @@ export function requireAppUrl() {
 }
 
 export function getEmailRoutingDomain() {
-  return process.env.EMAIL_ROUTING_DOMAIN?.trim() || "example.com";
+  return process.env.EMAIL_ROUTING_DOMAIN?.trim() || "";
+}
+
+export function requireEmailRoutingDomain() {
+  const emailRoutingDomain = getEmailRoutingDomain();
+
+  if (!emailRoutingDomain) {
+    throw new Error("Missing EMAIL_ROUTING_DOMAIN.");
+  }
+
+  return emailRoutingDomain;
 }
 
 export function hasEmailIngestConfig() {
