@@ -16,12 +16,13 @@
 
 1. Verify billing starts and cancels correctly from `/app/billing`.
 2. If the billing model changes, cancel and reaccept the QA test subscription so the active Shopify subscription includes the usage line item.
-3. Verify `/app/billing` reports `Usage line item attached: Yes`.
-4. Run `npm run report:drift -- --shop your-store.myshopify.com` and confirm the report matches `/app/reporting`.
-5. Verify one sample email body, one PDF, and one spreadsheet flow end to end.
-6. Confirm draft orders appear in the dev store with the correct line items.
-7. Confirm the internal ops queue is reachable through `/ops/cases`.
-8. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
+3. Run `npm run billing:validate -- --shop your-store.myshopify.com` and verify it reports `Usage line item attached: Yes`.
+4. On a QA or dev store, run `npm run billing:validate -- --shop your-store.myshopify.com --create-validation-charge` once after any billing-model change to confirm Shopify accepts usage records.
+5. Run `npm run report:drift -- --shop your-store.myshopify.com` and confirm the report matches `/app/reporting`.
+6. Verify one sample email body, one PDF, and one spreadsheet flow end to end.
+7. Confirm draft orders appear in the dev store with the correct line items.
+8. Confirm the internal ops queue is reachable through `/ops/cases`.
+9. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
 
 ## Ongoing
 

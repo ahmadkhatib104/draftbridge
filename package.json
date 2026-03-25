@@ -23,6 +23,7 @@
     "db:studio": "prisma studio",
     "data:prune": "tsx scripts/prune-uninstalled-shops.ts",
     "report:drift": "tsx scripts/report-ops-drift.ts",
+    "billing:validate": "tsx scripts/validate-billing.ts",
     "render:build": "npm run db:generate && npm run build && node scripts/patch-prisma-server-build.mjs",
     "render:start": "npm run start",
     "test": "react-router typegen && vitest run",

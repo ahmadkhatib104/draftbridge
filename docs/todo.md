@@ -3,8 +3,8 @@
 ## Immediate
 
 - Submit the public app for review and monitor reviewer feedback.
-- Validate one live overage charge end to end on the QA store after the refreshed test subscription is accepted.
 - Watch for the protected-customer-data approval result as part of app review.
+- Validate billing on the first non-dev pilot store before charging any real merchant account.
 
 ## After First Pilot
 

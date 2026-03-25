@@ -30,6 +30,8 @@
   - queue-aging buckets
   - billing diagnostics, including whether the active Shopify subscription has a usage line item attached
 - `npm run report:drift -- --shop draftbridge-qa.myshopify.com` prints the same operational drift summary as Markdown for terminal or automation use.
+- `npm run billing:validate -- --shop draftbridge-qa.myshopify.com` prints the live billing diagnostics for a store.
+- `npm run billing:validate -- --shop draftbridge-qa.myshopify.com --create-validation-charge` creates a test usage record against the active subscription so overage billing can be validated after pricing changes.
 
 ## Current Metrics
 

@@ -34,6 +34,8 @@
 2. Run `npm run config:link`.
 3. Install the app on a dev or pilot store.
 4. Reaccept the test subscription from `/app/billing` whenever the recurring-plus-usage billing model changes.
+5. Run `npm run billing:validate -- --shop your-store.myshopify.com`.
+6. On a QA or dev store, run `npm run billing:validate -- --shop your-store.myshopify.com --create-validation-charge` once to confirm Shopify accepts usage charges for the active subscription.
 
 ## Cloudflare Email Routing
 

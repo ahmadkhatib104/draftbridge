@@ -71,6 +71,8 @@ npm run dev
 - `npm run typecheck`
 - `npm run lint`
 - `npm run report:drift -- --shop draftbridge-qa.myshopify.com`
+- `npm run billing:validate -- --shop draftbridge-qa.myshopify.com`
+- `npm run billing:validate -- --shop draftbridge-qa.myshopify.com --create-validation-charge`
 
 ## Important Human Checkpoints
 
