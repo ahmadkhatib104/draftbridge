@@ -1,4 +1,9 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { hasR2Config } from "../lib/env.server";
 
 let r2Client: S3Client | null = null;
@@ -67,4 +72,47 @@ export async function persistSourceDocumentContent(input: {
     storageKey: key,
     contentBase64: null,
   };
+}
+
+export async function purgeShopDocumentPrefix(shopId: string) {
+  const client = getR2Client();
+
+  if (!client) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const page = await client.send(
+      new ListObjectsV2Command({
+        Bucket: process.env.R2_BUCKET!,
+        Prefix: `${shopId}/`,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const objects = (page.Contents ?? [])
+      .map((entry) => entry.Key)
+      .filter((key): key is string => Boolean(key));
+
+    if (objects.length > 0) {
+      await client.send(
+        new DeleteObjectsCommand({
+          Bucket: process.env.R2_BUCKET!,
+          Delete: {
+            Objects: objects.map((key) => ({ Key: key })),
+            Quiet: true,
+          },
+        }),
+      );
+
+      deletedCount += objects.length;
+    }
+
+    continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return deletedCount;
 }

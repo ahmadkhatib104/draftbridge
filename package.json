@@ -21,6 +21,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "data:prune": "tsx scripts/prune-uninstalled-shops.ts",
     "render:build": "npm run db:generate && npm run build && node scripts/patch-prisma-server-build.mjs",
     "render:start": "npm run start",
     "test": "vitest run",

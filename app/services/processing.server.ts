@@ -582,6 +582,7 @@ export async function processSourceDocument(input: {
       contactEmail: candidate.contactEmail,
       poNumber: candidate.poNumber,
       note: candidate.notes,
+      currencyCode: candidate.currency,
       lineItems: matchedLines
         .filter((lineItem) => lineItem.variantLegacyId)
         .map((lineItem) => ({

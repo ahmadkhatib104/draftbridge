@@ -1,5 +1,4 @@
-import db from "../db.server";
-import { apiVersion } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
 
 export interface VariantMatchCandidate {
   gid: string;
@@ -13,8 +12,6 @@ export interface VariantMatchCandidate {
 export interface CustomerMatchCandidate {
   gid: string;
   legacyId: string;
-  displayName: string;
-  email: string | null;
 }
 
 function isRecoverableShopifyReadError(error: unknown) {
@@ -29,44 +26,11 @@ function isRecoverableShopifyReadError(error: unknown) {
   );
 }
 
-async function getOfflineAccessToken(shopDomain: string) {
-  const offlineSession =
-    (await db.session.findFirst({
-      where: {
-        shop: shopDomain,
-        isOnline: false,
-      },
-    })) ??
-    (await db.session.findFirst({
-      where: {
-        shop: shopDomain,
-      },
-    }));
-
-  if (!offlineSession) {
-    throw new Error(`No Shopify session is available for ${shopDomain}.`);
-  }
-
-  return offlineSession.accessToken;
-}
-
 async function adminGraphql<T>(shopDomain: string, query: string, variables?: Record<string, unknown>) {
-  const accessToken = await getOfflineAccessToken(shopDomain);
-  const response = await fetch(
-    `https://${shopDomain}/admin/api/${String(apiVersion)}/graphql.json`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": accessToken,
-      },
-      body: JSON.stringify({ query, variables }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Shopify GraphQL request failed with ${response.status}.`);
-  }
+  const { admin } = await unauthenticated.admin(shopDomain);
+  const response = await admin.graphql(query, {
+    variables,
+  });
 
   const payload = (await response.json()) as T & {
     errors?: Array<{ message?: string }>;
@@ -77,28 +41,6 @@ async function adminGraphql<T>(shopDomain: string, query: string, variables?: Re
   }
 
   return payload;
-}
-
-async function adminRest<T>(shopDomain: string, path: string, options: RequestInit) {
-  const accessToken = await getOfflineAccessToken(shopDomain);
-  const response = await fetch(
-    `https://${shopDomain}/admin/api/${String(apiVersion)}${path}`,
-    {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": accessToken,
-        ...(options.headers ?? {}),
-      },
-    },
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Shopify REST request failed with ${response.status}: ${text}`);
-  }
-
-  return (await response.json()) as T;
 }
 
 function escapeSearchTerm(value: string) {
@@ -150,7 +92,7 @@ export async function searchProductVariants(shopDomain: string, term: string) {
                   }
                 }
               }
-            };
+            }
           }`,
         { query: queryValue },
       );
@@ -202,8 +144,6 @@ export async function searchCustomers(shopDomain: string, term: string) {
             node?: {
               id: string;
               legacyResourceId: string;
-              displayName: string;
-              email?: string | null;
             };
           }>;
         };
@@ -217,8 +157,6 @@ export async function searchCustomers(shopDomain: string, term: string) {
               node {
                 id
                 legacyResourceId
-                displayName
-                email
               }
             }
           }
@@ -233,8 +171,6 @@ export async function searchCustomers(shopDomain: string, term: string) {
         .map((node) => ({
           gid: node.id,
           legacyId: String(node.legacyResourceId),
-          displayName: node.displayName,
-          email: node.email ?? null,
         })) ?? []
     );
   } catch (error) {
@@ -252,42 +188,90 @@ export async function createDraftOrder(input: {
   contactEmail?: string | null;
   note?: string | null;
   poNumber?: string | null;
+  currencyCode?: string | null;
   lineItems: Array<{
     variantLegacyId: string;
     quantity: number;
     originalUnitPrice?: string | null;
   }>;
 }) {
-  const payload = await adminRest<{
-    draft_order?: {
-      id: number;
-      name: string;
-      invoice_url?: string | null;
+  const payload = await adminGraphql<{
+    data?: {
+      draftOrderCreate?: {
+        draftOrder?: {
+          id: string;
+          name: string;
+          invoiceUrl?: string | null;
+        } | null;
+        userErrors?: Array<{
+          field?: string[] | null;
+          message?: string | null;
+        }> | null;
+      } | null;
     };
-  }>(input.shopDomain, "/draft_orders.json", {
-    method: "POST",
-    body: JSON.stringify({
-      draft_order: {
-        customer_id: input.customerLegacyId
-          ? Number(input.customerLegacyId)
-          : undefined,
+  }>(
+    input.shopDomain,
+    `#graphql
+      mutation DraftBridgeDraftOrderCreate($input: DraftOrderInput!) {
+        draftOrderCreate(input: $input) {
+          draftOrder {
+            id
+            name
+            invoiceUrl
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }`,
+    {
+      input: {
+        ...(input.customerLegacyId
+          ? {
+              purchasingEntity: {
+                customerId: toShopifyGid("Customer", input.customerLegacyId),
+              },
+            }
+          : {}),
         email: input.contactEmail ?? undefined,
         note:
           [input.poNumber ? `PO ${input.poNumber}` : null, input.note ?? null]
             .filter(Boolean)
             .join(" | ") || undefined,
-        line_items: input.lineItems.map((lineItem) => ({
-          variant_id: Number(lineItem.variantLegacyId),
+        poNumber: input.poNumber ?? undefined,
+        sourceName: "draftbridge",
+        lineItems: input.lineItems.map((lineItem) => ({
+          variantId: toShopifyGid("ProductVariant", lineItem.variantLegacyId),
           quantity: lineItem.quantity,
-          original_unit_price: lineItem.originalUnitPrice ?? undefined,
+          ...(lineItem.originalUnitPrice
+            ? {
+                originalUnitPriceWithCurrency: {
+                  amount: lineItem.originalUnitPrice,
+                  currencyCode: input.currencyCode ?? "USD",
+                },
+              }
+            : {}),
         })),
       },
-    }),
-  });
+    },
+  );
 
-  if (!payload.draft_order) {
+  const userError = payload.data?.draftOrderCreate?.userErrors?.find((error) => error.message);
+
+  if (userError?.message) {
+    throw new Error(userError.message);
+  }
+
+  const draftOrder = payload.data?.draftOrderCreate?.draftOrder;
+
+  if (!draftOrder) {
     throw new Error("Shopify did not return a draft order.");
   }
 
-  return payload.draft_order;
+  return draftOrder;
+}
+
+function toShopifyGid(resource: "Customer" | "ProductVariant", value: string) {
+  return value.startsWith("gid://shopify/") ? value : `gid://shopify/${resource}/${value}`;
 }

@@ -110,6 +110,11 @@ export default function MarketingIndex() {
           </section>
         ))}
       </div>
+
+      <p style={{ marginTop: "2rem", color: "#52606d" }}>
+        Legal: <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/data-processing">Data processing</a> ·{" "}
+        <a href="/support">Support</a>
+      </p>
     </main>
   );
 }
