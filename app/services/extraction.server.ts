@@ -2,7 +2,6 @@ import type { SenderProfile } from "@prisma/client";
 import { z } from "zod";
 import {
   parseSpreadsheetHints,
-  SPREADSHEET_HINT_CONFIG,
   type SpreadsheetHintKey,
 } from "../lib/spreadsheet-hints";
 import type { ParsedSpreadsheetRow } from "./document-parser.server";
