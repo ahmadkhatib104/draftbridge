@@ -9,10 +9,12 @@ import type {
 } from "@prisma/client";
 import db from "../db.server";
 import {
-  normalizeValue,
   parseSpreadsheetHints,
   type SpreadsheetHintKey,
   type SpreadsheetHints,
+} from "../lib/spreadsheet-hints";
+import {
+  normalizeValue,
 } from "./extraction.server";
 import type { ParsedSpreadsheetRow } from "./document-parser.server";
 import { parseDocumentContent } from "./document-parser.server";

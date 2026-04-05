@@ -4,7 +4,7 @@ import db from "../db.server";
 import {
   parseSpreadsheetHints,
   SPREADSHEET_HINT_CONFIG,
-} from "../services/extraction.server";
+} from "../lib/spreadsheet-hints";
 import {
   deleteCatalogAlias,
   deleteCustomerAlias,

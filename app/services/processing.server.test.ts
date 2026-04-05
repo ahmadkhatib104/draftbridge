@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { parseSpreadsheetHints } from "../lib/spreadsheet-hints";
 import {
   extractSpreadsheetPurchaseOrder,
   extractTextPurchaseOrder,
-  parseSpreadsheetHints,
 } from "./extraction.server";
 
 describe("purchase order extraction", () => {
