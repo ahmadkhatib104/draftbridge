@@ -21,8 +21,9 @@
 5. Run `npm run report:drift -- --shop your-store.myshopify.com` and confirm the report matches `/app/reporting`.
 6. Verify one sample email body, one PDF, and one spreadsheet flow end to end.
 7. Confirm draft orders appear in the dev store with the correct line items.
-8. Confirm the internal ops queue is reachable through `/ops/cases`.
-9. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
+8. Confirm merchants can see unresolved orders through `/app/exceptions`.
+9. Confirm the internal ops queue is reachable through `/ops/cases`.
+10. Confirm `SHOPIFY_APP_URL`, `EMAIL_INGEST_SHARED_SECRET`, and `OPS_DASHBOARD_TOKEN` are set in production.
 
 ## Ongoing
 

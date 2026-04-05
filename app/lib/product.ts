@@ -8,6 +8,7 @@ export const APP_NAVIGATION = [
   { href: "/app", label: "Overview" },
   { href: "/app/onboarding", label: "Onboarding" },
   { href: "/app/orders", label: "Orders" },
+  { href: "/app/exceptions", label: "Exceptions" },
   { href: "/app/billing", label: "Billing" },
   { href: "/app/reporting", label: "Reporting" },
   { href: "/app/settings", label: "Settings" },

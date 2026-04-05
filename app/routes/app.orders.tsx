@@ -1,32 +1,50 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { Link, useLoaderData } from "react-router";
 import db from "../db.server";
+import { getMerchantExceptionSummary } from "../services/merchant-exceptions.server";
 import { requireShopContext } from "../services/shop-context.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireShopContext(request);
-  const orders = await db.purchaseOrder.findMany({
-    where: { shopId: shop.id },
-    orderBy: { createdAt: "desc" },
-    include: {
-      lineItems: {
-        orderBy: { lineNumber: "asc" },
+  const [orders, exceptionSummary] = await Promise.all([
+    db.purchaseOrder.findMany({
+      where: { shopId: shop.id },
+      orderBy: { createdAt: "desc" },
+      include: {
+        lineItems: {
+          orderBy: { lineNumber: "asc" },
+        },
+        validationIssues: true,
+        draftOrderSync: true,
+        opsCase: true,
       },
-      validationIssues: true,
-      draftOrderSync: true,
-      opsCase: true,
-    },
-  });
+    }),
+    getMerchantExceptionSummary(shop.id),
+  ]);
 
-  return { orders };
+  return { orders, exceptionSummary };
 };
 
 export default function OrdersRoute() {
-  const { orders } = useLoaderData<typeof loader>();
+  const { orders, exceptionSummary } = useLoaderData<typeof loader>();
 
   return (
     <div style={{ padding: "1rem" }}>
       <s-page heading="Orders">
+        {exceptionSummary.totalCount > 0 ? (
+          <s-banner heading="Orders waiting in review">
+            <s-paragraph>
+              {exceptionSummary.totalCount} order{exceptionSummary.totalCount === 1 ? "" : "s"} still need review or clarification.
+            </s-paragraph>
+            <s-paragraph>
+              Waiting on you: {exceptionSummary.waitingOnMerchantCount} | In review:{" "}
+              {exceptionSummary.underReviewCount}
+            </s-paragraph>
+            <s-paragraph>
+              <Link to="/app/exceptions">Open the exception queue</Link>
+            </s-paragraph>
+          </s-banner>
+        ) : null}
         {orders.length === 0 ? (
           <s-card heading="No purchase orders yet">
             <s-paragraph>
@@ -50,11 +68,13 @@ export default function OrdersRoute() {
                   {order.draftOrderSync?.shopifyDraftOrderName
                     ? `Draft order ${order.draftOrderSync.shopifyDraftOrderName}`
                     : order.opsCase
-                      ? `Ops case ${order.opsCase.status}`
+                      ? `Exception queue ${order.opsCase.status}`
                       : "Pending"}
                 </s-paragraph>
                 {order.clarificationNeeded ? (
-                  <s-paragraph>Clarification can be added from the order detail page.</s-paragraph>
+                  <s-paragraph>
+                    Clarification can be added from the order detail page or the exception queue.
+                  </s-paragraph>
                 ) : null}
                 <s-paragraph>
                   <Link to={`/app/orders/${order.id}`}>Open details</Link>

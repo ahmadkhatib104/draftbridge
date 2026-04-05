@@ -21,11 +21,11 @@ export default function OnboardingRoute() {
       <s-page heading="Onboarding">
         <s-card heading="1. Set up forwarding">
           <s-paragraph>
-            Configure your Cloudflare Email Routing address and forward inbound wholesale POs to{" "}
+            In Gmail, Outlook, or your shared ops inbox, create an auto-forward rule so wholesale PO emails go to{" "}
             <s-text>{mailbox.forwardingAddress}</s-text>.
           </s-paragraph>
           <s-paragraph>
-            The app accepts email body text, PDF attachments, CSV, and XLSX files.
+            Forward the emails your team would normally retype. DraftBridge accepts email body text, PDF attachments, CSV, and XLSX files.
           </s-paragraph>
         </s-card>
         <s-card heading="2. Send a sample PO">
@@ -35,7 +35,7 @@ export default function OnboardingRoute() {
         </s-card>
         <s-card heading="3. Confirm the result">
           <s-paragraph>
-            High-confidence POs will create Shopify draft orders automatically. Lower-confidence POs will stay in review until DraftBridge ops resolves them or you add clarification from the order detail page.
+            High-confidence POs will create Shopify draft orders automatically. Lower-confidence POs will stay visible in your exception queue until DraftBridge ops resolves them or you add clarification from the order detail page.
           </s-paragraph>
           <s-paragraph>Current onboarding status: {shop.onboardingStatus}</s-paragraph>
         </s-card>

@@ -74,10 +74,17 @@ export default function AppIndex() {
             </s-paragraph>
           </s-card>
           <s-card heading="Open ops cases">
-            <s-paragraph>{dashboard.openOpsCaseCount}</s-paragraph>
+            <s-paragraph>{dashboard.merchantExceptionSummary.totalCount}</s-paragraph>
             <s-paragraph>
-              Unclear orders stay in the internal ops queue until a human resolves them.
+              Low-confidence orders stay visible in your exception queue while DraftBridge ops reviews them.
             </s-paragraph>
+            <s-paragraph>
+              Waiting on you: {dashboard.merchantExceptionSummary.waitingOnMerchantCount} | In review:{" "}
+              {dashboard.merchantExceptionSummary.underReviewCount}
+            </s-paragraph>
+            <p style={{ marginTop: "0.5rem" }}>
+              <Link to="/app/exceptions">Open exception queue</Link>
+            </p>
           </s-card>
           <s-card heading="Shop">
             <s-paragraph>{shop.shopDomain}</s-paragraph>

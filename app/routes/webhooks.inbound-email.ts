@@ -33,5 +33,5 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const payload = (await request.json()) as NormalizedInboundEmailPayload;
   const result = await handleInboundEmail(payload);
 
-  return Response.json(result);
+  return Response.json(result, { status: 202 });
 };

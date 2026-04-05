@@ -2,6 +2,10 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import db from "../db.server";
 import {
+  learnFromPurchaseOrderCorrections,
+  savePurchaseOrderCorrections,
+} from "../services/memory.server";
+import {
   requestMerchantClarification,
   retryPurchaseOrderResolution,
 } from "../services/processing.server";
@@ -123,29 +127,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (intent === "save-review") {
       const notes = readStringField(formData, "notes");
 
-      await db.purchaseOrder.update({
-        where: { id: purchaseOrderId },
-        data: {
-          poNumber: readStringField(formData, "poNumber") || null,
-          companyName: readStringField(formData, "companyName") || null,
-          customerName: readStringField(formData, "customerName") || null,
-          contactEmail: readStringField(formData, "contactEmail") || null,
-          notes: notes || null,
-        },
+      await savePurchaseOrderCorrections({
+        purchaseOrderId,
+        poNumber: readStringField(formData, "poNumber"),
+        companyName: readStringField(formData, "companyName"),
+        customerName: readStringField(formData, "customerName"),
+        contactEmail: readStringField(formData, "contactEmail"),
+        currency: readStringField(formData, "currency"),
+        notes,
+        lineItems: purchaseOrder.lineItems.map((lineItem) => ({
+          id: lineItem.id,
+          customerSku: readStringField(formData, `customerSku:${lineItem.id}`),
+          merchantSku: readStringField(formData, `merchantSku:${lineItem.id}`),
+          description: readStringField(formData, `description:${lineItem.id}`),
+          quantity: parseOptionalInt(readStringField(formData, `quantity:${lineItem.id}`)),
+          unitPrice: parseOptionalDecimal(readStringField(formData, `unitPrice:${lineItem.id}`)),
+          uom: readStringField(formData, `uom:${lineItem.id}`),
+        })),
       });
-
-      for (const lineItem of purchaseOrder.lineItems) {
-        await db.purchaseOrderLine.update({
-          where: { id: lineItem.id },
-          data: {
-            customerSku: readStringField(formData, `customerSku:${lineItem.id}`) || null,
-            merchantSku: readStringField(formData, `merchantSku:${lineItem.id}`) || null,
-            description: readStringField(formData, `description:${lineItem.id}`) || null,
-            quantity: parseOptionalInt(readStringField(formData, `quantity:${lineItem.id}`)),
-            unitPrice: parseOptionalDecimal(readStringField(formData, `unitPrice:${lineItem.id}`)),
-          },
-        });
-      }
 
       if (purchaseOrder.opsCase) {
         await db.opsCase.update({
@@ -154,6 +153,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             status: "IN_PROGRESS",
             resolutionNotes: notes || null,
           },
+        });
+      }
+
+      if (formData.get("rememberCorrections") === "on") {
+        await learnFromPurchaseOrderCorrections({
+          shopId: purchaseOrder.shopId,
+          purchaseOrderId,
+          shopDomain: purchaseOrder.shop.shopDomain,
+          actorType: "OPS",
         });
       }
     }
@@ -262,6 +270,14 @@ export default function OpsCasesRoute() {
                       style={{ width: "100%" }}
                     />
                   </label>
+                  <label>
+                    Currency
+                    <input
+                      name="currency"
+                      defaultValue={opsCase.purchaseOrder.currency || ""}
+                      style={{ width: "100%" }}
+                    />
+                  </label>
                 </div>
 
                 <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -271,7 +287,7 @@ export default function OpsCasesRoute() {
                       style={{
                         display: "grid",
                         gap: "0.5rem",
-                        gridTemplateColumns: "1fr 1fr 2fr 0.75fr 0.75fr",
+                        gridTemplateColumns: "1fr 1fr 2fr 0.75fr 0.75fr 0.75fr",
                         alignItems: "end",
                         padding: "0.75rem",
                         border: "1px solid #dfe3e8",
@@ -320,6 +336,14 @@ export default function OpsCasesRoute() {
                           style={{ width: "100%" }}
                         />
                       </label>
+                      <label>
+                        UOM
+                        <input
+                          name={`uom:${lineItem.id}`}
+                          defaultValue={lineItem.uom || ""}
+                          style={{ width: "100%" }}
+                        />
+                      </label>
                     </div>
                   ))}
                 </div>
@@ -332,6 +356,11 @@ export default function OpsCasesRoute() {
                     rows={3}
                     style={{ width: "100%" }}
                   />
+                </label>
+
+                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input type="checkbox" name="rememberCorrections" defaultChecked />
+                  Save these corrections into sender memory before retrying
                 </label>
 
                 <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

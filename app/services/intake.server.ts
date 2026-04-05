@@ -39,6 +39,12 @@ interface PreparedSourceDocument {
   structuredRows: ParsedSpreadsheetRow[];
 }
 
+interface QueuedInboundProcessingResult {
+  inboundMessageId: string;
+  deduped: boolean;
+  queued: boolean;
+}
+
 interface SourceDocumentCandidateScoreInput {
   kind: SourceDocumentKind;
   parseStatus: ParseStatus;
@@ -50,6 +56,9 @@ interface SourceDocumentCandidateScoreInput {
 
 const PRIMARY_FILENAME_HINT = /(po|purchase.?order|order|wholesale)/i;
 const SUPPORTING_FILENAME_HINT = /(packing|terms|conditions|instructions|readme|spec|invoice|receipt)/i;
+const scheduledInboundMessageIds = new Set<string>();
+let inboundProcessingQueueScheduled = false;
+let inboundProcessingQueueActive = false;
 
 function normalizeEmailAddress(value: string | null | undefined) {
   if (!value) {
@@ -247,13 +256,6 @@ async function createSourceDocumentsForMessage(input: {
       contentType: documentInput.contentType,
       isEmailBody: documentInput.isEmailBody,
     });
-    const parsed = await parseDocumentContent({
-      kind,
-      contentBase64: documentInput.contentBase64,
-      textBody: documentInput.isEmailBody ? input.textBody ?? undefined : undefined,
-      filename: documentInput.filename,
-      contentType: documentInput.contentType,
-    });
     const persistedContent = await persistSourceDocumentContent({
       shopId: input.shopId,
       inboundMessageId: input.inboundMessageId,
@@ -274,17 +276,14 @@ async function createSourceDocumentsForMessage(input: {
         storageProvider: persistedContent.storageProvider,
         storageKey: persistedContent.storageKey ?? undefined,
         contentBase64: persistedContent.contentBase64 ?? undefined,
-        extractedText: parsed.extractedText ?? undefined,
-        pageCount: parsed.pageCount ?? undefined,
-        parseStatus: parsed.parseStatus,
-        parseError: parsed.parseError ?? undefined,
+        parseStatus: "PENDING",
         sequence: index,
       },
     });
 
     preparedDocuments.push({
       sourceDocument,
-      structuredRows: parsed.structuredRows,
+      structuredRows: [],
     });
   }
 
@@ -362,28 +361,128 @@ async function syncInboundMessageState(inboundMessageId: string, incrementAttemp
   });
 }
 
-async function processInboundMessage(input: {
-  inboundMessageId: string;
-  shopId: string;
-  shopDomain: string;
-  mailboxId: string;
-  senderProfileId: string;
-  preparedDocuments?: PreparedSourceDocument[];
-}) {
+async function prepareSourceDocuments(
+  sourceDocuments: SourceDocument[],
+  rawTextBody?: string | null,
+) {
+  return Promise.all(
+    sourceDocuments.map((sourceDocument) =>
+      reparseSourceDocument(sourceDocument, rawTextBody),
+    ),
+  );
+}
+
+function scheduleInboundQueueDrain() {
+  if (inboundProcessingQueueScheduled) {
+    return;
+  }
+
+  inboundProcessingQueueScheduled = true;
+  setTimeout(() => {
+    inboundProcessingQueueScheduled = false;
+    void drainScheduledInboundMessages();
+  }, 0);
+}
+
+async function drainScheduledInboundMessages() {
+  if (inboundProcessingQueueActive) {
+    return;
+  }
+
+  inboundProcessingQueueActive = true;
+
+  try {
+    while (scheduledInboundMessageIds.size > 0) {
+      const nextInboundMessageId = scheduledInboundMessageIds.values().next().value;
+
+      if (!nextInboundMessageId) {
+        break;
+      }
+
+      scheduledInboundMessageIds.delete(nextInboundMessageId);
+
+      try {
+        await processPersistedInboundMessage(nextInboundMessageId);
+      } catch (error) {
+        console.error("Failed background inbound processing", {
+          inboundMessageId: nextInboundMessageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  } finally {
+    inboundProcessingQueueActive = false;
+
+    if (scheduledInboundMessageIds.size > 0) {
+      scheduleInboundQueueDrain();
+    }
+  }
+}
+
+export function queueInboundMessageProcessing(inboundMessageId: string) {
+  scheduledInboundMessageIds.add(inboundMessageId);
+  scheduleInboundQueueDrain();
+}
+
+export async function drainPendingInboundMessages(limit = 25) {
+  const pendingMessages = await db.inboundMessage.findMany({
+    where: {
+      status: "RECEIVED",
+    },
+    orderBy: { receivedAt: "asc" },
+    take: limit,
+    select: { id: true },
+  });
+
+  for (const pendingMessage of pendingMessages) {
+    await processPersistedInboundMessage(pendingMessage.id);
+  }
+
+  return pendingMessages.length;
+}
+
+export async function processPersistedInboundMessage(inboundMessageId: string) {
   const inboundMessage = await db.inboundMessage.findUniqueOrThrow({
-    where: { id: input.inboundMessageId },
+    where: { id: inboundMessageId },
     include: {
       sourceDocuments: {
         orderBy: { sequence: "asc" },
       },
+      mailbox: {
+        include: {
+          shop: true,
+        },
+      },
     },
   });
 
-  const primarySourceDocument = selectPrimarySourceDocument(inboundMessage.sourceDocuments);
+  const latestOrder = await db.purchaseOrder.findFirst({
+    where: {
+      inboundMessageId,
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  if (latestOrder && hasTerminalOrderStatus(latestOrder.status)) {
+    await syncInboundMessageState(inboundMessageId, false);
+    return latestOrder;
+  }
+
+  const preparedDocuments = await prepareSourceDocuments(
+    inboundMessage.sourceDocuments,
+    inboundMessage.rawTextBody,
+  );
+  const primarySourceDocument = selectPrimarySourceDocument(
+    preparedDocuments.map((document) => document.sourceDocument),
+  );
 
   if (!primarySourceDocument) {
     await db.inboundMessage.update({
-      where: { id: input.inboundMessageId },
+      where: { id: inboundMessageId },
       data: {
         status: "FAILED",
         processingAttempts: {
@@ -397,32 +496,26 @@ async function processInboundMessage(input: {
     return null;
   }
 
-  const existingOrder = await db.purchaseOrder.findUnique({
-    where: { sourceDocumentId: primarySourceDocument.id },
-    select: { id: true, status: true },
-  });
-
-  if (existingOrder && hasTerminalOrderStatus(existingOrder.status)) {
-    await syncInboundMessageState(input.inboundMessageId, false);
-    return existingOrder;
-  }
-
   const senderProfile = await db.senderProfile.findUniqueOrThrow({
-    where: { id: input.senderProfileId },
+    where: {
+      shopId_senderEmail: {
+        shopId: inboundMessage.shopId,
+        senderEmail: inboundMessage.senderEmail,
+      },
+    },
   });
 
   const preparedDocument =
-    input.preparedDocuments?.find(
+    preparedDocuments.find(
       (document) => document.sourceDocument.id === primarySourceDocument.id,
-    ) ??
-    await reparseSourceDocument(primarySourceDocument, inboundMessage.rawTextBody);
+    )!;
 
   try {
     const order = await processSourceDocument({
-      shopId: input.shopId,
-      shopDomain: input.shopDomain,
-      inboundMessageId: input.inboundMessageId,
-      mailboxId: input.mailboxId,
+      shopId: inboundMessage.shopId,
+      shopDomain: inboundMessage.mailbox.shop.shopDomain,
+      inboundMessageId,
+      mailboxId: inboundMessage.mailboxId,
       senderProfile,
       sourceDocument: preparedDocument.sourceDocument,
       structuredRows: preparedDocument.structuredRows,
@@ -431,17 +524,17 @@ async function processInboundMessage(input: {
         rawTextBody: inboundMessage.rawTextBody,
         primarySourceDocument: preparedDocument.sourceDocument,
       }),
-      existingPurchaseOrderId: existingOrder?.id ?? undefined,
+      existingPurchaseOrderId: latestOrder?.id ?? undefined,
     });
 
-    await syncInboundMessageState(input.inboundMessageId, true);
+    await syncInboundMessageState(inboundMessageId, true);
     return order;
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Inbound message processing failed.";
 
     await db.inboundMessage.update({
-      where: { id: input.inboundMessageId },
+      where: { id: inboundMessageId },
       data: {
         status: "FAILED",
         processingAttempts: {
@@ -456,7 +549,9 @@ async function processInboundMessage(input: {
   }
 }
 
-export async function handleInboundEmail(payload: NormalizedInboundEmailPayload) {
+export async function handleInboundEmail(
+  payload: NormalizedInboundEmailPayload,
+): Promise<QueuedInboundProcessingResult> {
   const routingKey = inferMailboxRoutingKey(payload);
 
   if (!routingKey) {
@@ -480,7 +575,7 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
   const senderName = normalizeSenderName(payload);
   const dedupeHash = buildMessageHash(payload);
 
-  const senderProfile = await db.senderProfile.upsert({
+  await db.senderProfile.upsert({
     where: {
       shopId_senderEmail: {
         shopId: mailbox.shopId,
@@ -515,8 +610,6 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
   });
 
   let deduped = false;
-  let preparedDocuments: PreparedSourceDocument[] | undefined;
-
   if (!inboundMessage) {
     inboundMessage = await db.inboundMessage.create({
       data: {
@@ -533,7 +626,7 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
       },
     });
 
-    preparedDocuments = await createSourceDocumentsForMessage({
+    await createSourceDocumentsForMessage({
       inboundMessageId: inboundMessage.id,
       shopId: mailbox.shopId,
       textBody: payload.textBody,
@@ -562,17 +655,11 @@ export async function handleInboundEmail(payload: NormalizedInboundEmailPayload)
     deduped = true;
   }
 
-  await processInboundMessage({
-    inboundMessageId: inboundMessage.id,
-    shopId: mailbox.shopId,
-    shopDomain: mailbox.shop.shopDomain,
-    mailboxId: mailbox.id,
-    senderProfileId: senderProfile.id,
-    preparedDocuments,
-  });
+  queueInboundMessageProcessing(inboundMessage.id);
 
   return {
     inboundMessageId: inboundMessage.id,
     deduped,
+    queued: true,
   };
 }

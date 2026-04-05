@@ -2,6 +2,22 @@ import type { SenderProfile } from "@prisma/client";
 import { z } from "zod";
 import type { ParsedSpreadsheetRow } from "./document-parser.server";
 
+export const SPREADSHEET_HINT_CONFIG = [
+  { key: "poNumber", label: "PO number columns" },
+  { key: "customerName", label: "Customer columns" },
+  { key: "companyName", label: "Company columns" },
+  { key: "contactEmail", label: "Contact email columns" },
+  { key: "merchantSku", label: "Merchant SKU columns" },
+  { key: "customerSku", label: "Customer SKU columns" },
+  { key: "description", label: "Description columns" },
+  { key: "quantity", label: "Quantity columns" },
+  { key: "unitPrice", label: "Unit price columns" },
+  { key: "uom", label: "Unit of measure columns" },
+] as const;
+
+export type SpreadsheetHintKey = (typeof SPREADSHEET_HINT_CONFIG)[number]["key"];
+export type SpreadsheetHints = Partial<Record<SpreadsheetHintKey, string[]>>;
+
 const extractedLineSchema = z.object({
   customerSku: z.string().optional().nullable(),
   merchantSku: z.string().optional().nullable(),
@@ -34,6 +50,34 @@ export function normalizeValue(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
+export function parseSpreadsheetHints(value: unknown): SpreadsheetHints {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const parsedHints: SpreadsheetHints = {};
+
+  for (const hintConfig of SPREADSHEET_HINT_CONFIG) {
+    const rawValue = (value as Record<string, unknown>)[hintConfig.key];
+    const values = Array.isArray(rawValue)
+      ? rawValue
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter(Boolean)
+      : typeof rawValue === "string"
+        ? rawValue
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : [];
+
+    if (values.length > 0) {
+      parsedHints[hintConfig.key] = Array.from(new Set(values));
+    }
+  }
+
+  return parsedHints;
+}
+
 function parseCurrencySymbol(text: string) {
   if (text.includes("$")) {
     return "USD";
@@ -48,6 +92,18 @@ function detectRowColumn(headers: string[], variants: string[]) {
   );
 }
 
+function detectRowColumnWithHints(
+  headers: string[],
+  defaults: string[],
+  senderProfile?: SenderProfile | null,
+  hintKey?: SpreadsheetHintKey,
+) {
+  const parsedHints = senderProfile ? parseSpreadsheetHints(senderProfile.spreadsheetHints) : {};
+  const hintVariants = hintKey ? parsedHints[hintKey] ?? [] : [];
+
+  return detectRowColumn(headers, [...hintVariants, ...defaults]);
+}
+
 export function extractSpreadsheetPurchaseOrder(
   rows: ParsedSpreadsheetRow[],
   senderProfile?: SenderProfile | null,
@@ -55,16 +111,66 @@ export function extractSpreadsheetPurchaseOrder(
   const headers = Array.from(
     new Set(rows.flatMap((row) => Object.keys(row).filter(Boolean))),
   );
-  const skuKey = detectRowColumn(headers, ["sku", "item sku", "merchant sku", "vendor sku", "product sku"]);
-  const customerSkuKey = detectRowColumn(headers, ["customer sku", "buyer sku"]);
-  const descriptionKey = detectRowColumn(headers, ["description", "item description", "product", "item"]);
-  const quantityKey = detectRowColumn(headers, ["qty", "quantity", "order qty", "units"]);
-  const priceKey = detectRowColumn(headers, ["price", "unit price", "wholesale price", "cost"]);
-  const uomKey = detectRowColumn(headers, ["uom", "unit", "unit of measure"]);
-  const poKey = detectRowColumn(headers, ["po", "po number", "purchase order", "purchase order number"]);
-  const customerKey = detectRowColumn(headers, ["customer", "customer name", "account", "retailer"]);
-  const companyKey = detectRowColumn(headers, ["company", "company name"]);
-  const contactEmailKey = detectRowColumn(headers, ["email", "contact email", "buyer email"]);
+  const skuKey = detectRowColumnWithHints(
+    headers,
+    ["sku", "item sku", "merchant sku", "vendor sku", "product sku"],
+    senderProfile,
+    "merchantSku",
+  );
+  const customerSkuKey = detectRowColumnWithHints(
+    headers,
+    ["customer sku", "buyer sku"],
+    senderProfile,
+    "customerSku",
+  );
+  const descriptionKey = detectRowColumnWithHints(
+    headers,
+    ["description", "item description", "product", "item"],
+    senderProfile,
+    "description",
+  );
+  const quantityKey = detectRowColumnWithHints(
+    headers,
+    ["qty", "quantity", "order qty", "units"],
+    senderProfile,
+    "quantity",
+  );
+  const priceKey = detectRowColumnWithHints(
+    headers,
+    ["price", "unit price", "wholesale price", "cost"],
+    senderProfile,
+    "unitPrice",
+  );
+  const uomKey = detectRowColumnWithHints(
+    headers,
+    ["uom", "unit", "unit of measure"],
+    senderProfile,
+    "uom",
+  );
+  const poKey = detectRowColumnWithHints(
+    headers,
+    ["po", "po number", "purchase order", "purchase order number"],
+    senderProfile,
+    "poNumber",
+  );
+  const customerKey = detectRowColumnWithHints(
+    headers,
+    ["customer", "customer name", "account", "retailer"],
+    senderProfile,
+    "customerName",
+  );
+  const companyKey = detectRowColumnWithHints(
+    headers,
+    ["company", "company name"],
+    senderProfile,
+    "companyName",
+  );
+  const contactEmailKey = detectRowColumnWithHints(
+    headers,
+    ["email", "contact email", "buyer email"],
+    senderProfile,
+    "contactEmail",
+  );
 
   const lineItems = rows
     .map((row) => ({

@@ -45,6 +45,7 @@
 4. Set the Worker secret and Render `EMAIL_INGEST_SHARED_SECRET` to the same value.
 5. Send a sample email with PDF and spreadsheet attachments.
 6. Run `npm run report:drift -- --shop your-store.myshopify.com` and compare the results against `/app/reporting`.
+7. If Render restarts while inbound messages are still in `RECEIVED`, run `npm run inbound:drain -- 25` once to drain the persisted queue.
 
 Recommended baseline:
 - `OPENAI_PRIMARY_MODEL=gpt-5.4-mini`

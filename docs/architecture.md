@@ -20,7 +20,7 @@
 6. A structured purchase-order candidate is extracted from the parsed content.
 7. Shopify catalog and customer matching run against live Admin API data plus learned alias memory.
 8. Validated, high-confidence orders create Shopify draft orders through the Admin API.
-9. Blocking or uncertain cases become `OpsCase` rows for internal review.
+9. Blocking or uncertain cases become `OpsCase` rows for internal review while staying visible in the merchant exception queue.
 10. Operational reporting rolls up funnel, drift, queue, and billing-diagnostic metrics for `/app/reporting` and terminal drift reports.
 
 ## Key Models
@@ -45,6 +45,6 @@
 
 - Shopify only in v1
 - Draft orders only, never blind fulfillment
-- Internal ops queue only in v1
+- Internal ops queue remains the support workflow, but merchants can still see unresolved exceptions and add clarification
 - Merchant-facing workflow stays narrow: onboarding, order history, billing, settings
 - B2B entity support is alias-memory assisted; customer fallback stays available when full B2B context is not known

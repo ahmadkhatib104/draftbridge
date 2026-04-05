@@ -10,7 +10,7 @@
 - SKU matching against Shopify
 - Customer fallback matching against Shopify customers
 - Draft-order creation for high-confidence orders
-- Internal ops queue for low-confidence orders
+- Merchant-facing exception queue plus internal ops queue for low-confidence orders
 - Usage tracking for successful processed POs
 - Billing page with four recurring plans
 
@@ -18,7 +18,6 @@
 
 - ERP integrations
 - EDI
-- Merchant-facing exception queue
 - Blind fulfillment
 - Supplier-side purchase order issuance
 - Multi-platform ecommerce support

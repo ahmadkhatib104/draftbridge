@@ -12,7 +12,7 @@
 1. Ask for one sample PO.
 2. Show the forwarded email landing in DraftBridge.
 3. Show the resulting draft order in Shopify.
-4. Show the internal ops queue for low-confidence cases.
+4. Show the merchant exception queue for low-confidence cases, then show the internal ops queue only as the support backstop.
 5. Quote time saved and error reduction instead of generic AI language.
 
 ## Positioning

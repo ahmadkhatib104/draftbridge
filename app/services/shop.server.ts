@@ -5,6 +5,7 @@ import { getIncludedUsageLimit } from "../lib/billing";
 import { requireEmailRoutingDomain } from "../lib/env.server";
 import { createAuditEvent } from "./audit.server";
 import { upsertBillingStateSafely } from "./billing.server";
+import { getMerchantExceptionSummary } from "./merchant-exceptions.server";
 
 function normalizeRoutingKey(value: string) {
   return (
@@ -245,6 +246,7 @@ export async function getDashboardSnapshot(shopId: string) {
     recentOrders,
     orderCounts,
     openOpsCaseCount,
+    merchantExceptionSummary,
     latestMailbox,
     latestAuditEvents,
   ] = await Promise.all([
@@ -273,6 +275,7 @@ export async function getDashboardSnapshot(shopId: string) {
         },
       },
     }),
+    getMerchantExceptionSummary(shopId),
     getPrimaryMailbox(shopId),
     db.auditEvent.findMany({
       where: { shopId },
@@ -285,6 +288,7 @@ export async function getDashboardSnapshot(shopId: string) {
     recentOrders,
     orderCounts,
     openOpsCaseCount,
+    merchantExceptionSummary,
     mailbox: latestMailbox,
     auditEvents: latestAuditEvents,
   };

@@ -8,7 +8,6 @@
 
 ## After First Pilot
 
-- Add sender-specific spreadsheet column memory editing in the UI.
-- Add manual customer and company-location alias management.
-- Replace synchronous webhook processing with a background job queue once pilot traffic exceeds the current straight-through throughput envelope.
+- Add company and company-location alias targeting when Shopify B2B matching is in active pilot use.
+- Replace the in-process inbound queue with a durable external job runner once pilot traffic exceeds the current straight-through throughput envelope.
 - Add support playbooks and merchant-facing App Store assets for non-QA stores.

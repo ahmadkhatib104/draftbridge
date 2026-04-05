@@ -9,7 +9,7 @@ Embedded Shopify app for wholesale merchants who still receive inbound purchase 
 - Match SKUs against the Shopify catalog.
 - Validate quantity and price before draft-order creation.
 - Auto-create draft orders only when confidence is high.
-- Send lower-confidence cases to an internal ops queue.
+- Keep lower-confidence cases visible in a merchant exception queue while DraftBridge ops reviews them.
 
 ## Current Stack
 
@@ -88,6 +88,7 @@ npm run dev
 - `/app`
 - `/app/onboarding`
 - `/app/orders`
+- `/app/exceptions`
 - `/app/billing`
 - `/app/reporting`
 - `/app/settings`

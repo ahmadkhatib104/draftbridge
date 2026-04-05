@@ -17,6 +17,7 @@ import {
   normalizeValue,
   type ExtractedPurchaseOrder,
 } from "./extraction.server";
+import { refreshSenderLearning } from "./memory.server";
 import { advanceOnboardingStatus } from "./shop.server";
 import {
   createDraftOrder,
@@ -959,6 +960,7 @@ export async function retryPurchaseOrderResolution(input: {
       shopId: purchaseOrder.shopId,
       senderProfileId: purchaseOrder.senderProfileId,
       purchaseOrderId: purchaseOrder.id,
+      shopDomain: input.shopDomain,
     });
     await advanceOnboardingStatus(purchaseOrder.shopId, "READY");
     await resolveOpsCase({
@@ -1110,130 +1112,6 @@ export async function submitMerchantClarification(input: {
       summary: "Merchant submitted clarification notes.",
       status: "IN_PROGRESS",
       resolutionNotes: input.note,
-    });
-  }
-}
-
-export async function refreshSenderLearning(input: {
-  shopId: string;
-  senderProfileId?: string | null;
-  purchaseOrderId: string;
-}) {
-  const purchaseOrder = await db.purchaseOrder.findUnique({
-    where: { id: input.purchaseOrderId },
-    include: {
-      lineItems: true,
-    },
-  });
-
-  if (!purchaseOrder) {
-    return;
-  }
-
-  for (const lineItem of purchaseOrder.lineItems) {
-    if (input.senderProfileId && lineItem.customerSku && lineItem.matchedVariantId) {
-      await db.catalogAlias.upsert({
-        where: {
-          shopId_aliasType_normalizedValue_senderProfileId: {
-            shopId: input.shopId,
-            aliasType: "CUSTOMER_SKU",
-            normalizedValue: normalizeValue(lineItem.customerSku),
-            senderProfileId: input.senderProfileId,
-          },
-        },
-        update: {
-          variantId: lineItem.matchedVariantId,
-          sku: lineItem.matchedSku,
-          title: lineItem.matchedTitle,
-        },
-        create: {
-          shopId: input.shopId,
-          senderProfileId: input.senderProfileId,
-          aliasType: "CUSTOMER_SKU",
-          sourceValue: lineItem.customerSku,
-          normalizedValue: normalizeValue(lineItem.customerSku),
-          variantId: lineItem.matchedVariantId,
-          sku: lineItem.matchedSku,
-          title: lineItem.matchedTitle,
-        },
-      });
-    }
-
-    if (input.senderProfileId && lineItem.description && lineItem.matchedVariantId) {
-      await db.catalogAlias.upsert({
-        where: {
-          shopId_aliasType_normalizedValue_senderProfileId: {
-            shopId: input.shopId,
-            aliasType: "DESCRIPTION",
-            normalizedValue: normalizeValue(lineItem.description),
-            senderProfileId: input.senderProfileId,
-          },
-        },
-        update: {
-          variantId: lineItem.matchedVariantId,
-          sku: lineItem.matchedSku,
-          title: lineItem.matchedTitle,
-        },
-        create: {
-          shopId: input.shopId,
-          senderProfileId: input.senderProfileId,
-          aliasType: "DESCRIPTION",
-          sourceValue: lineItem.description,
-          normalizedValue: normalizeValue(lineItem.description),
-          variantId: lineItem.matchedVariantId,
-          sku: lineItem.matchedSku,
-          title: lineItem.matchedTitle,
-        },
-      });
-    }
-  }
-
-  const customerAliasInputs = [
-    {
-      aliasType: "CONTACT_EMAIL" as const,
-      sourceValue: purchaseOrder.contactEmail,
-    },
-    {
-      aliasType: "COMPANY_NAME" as const,
-      sourceValue: purchaseOrder.companyName,
-    },
-    {
-      aliasType: "SENDER_EMAIL" as const,
-      sourceValue: purchaseOrder.contactEmail,
-    },
-  ].filter((entry) => entry.sourceValue && purchaseOrder.matchedCustomerId);
-
-  for (const aliasInput of customerAliasInputs) {
-    const normalizedValue = normalizeValue(aliasInput.sourceValue);
-
-    if (!normalizedValue) {
-      continue;
-    }
-
-    await db.customerAlias.upsert({
-      where: {
-        shopId_aliasType_normalizedValue: {
-          shopId: input.shopId,
-          aliasType: aliasInput.aliasType,
-          normalizedValue,
-        },
-      },
-      update: {
-        customerId: purchaseOrder.matchedCustomerId,
-        companyId: purchaseOrder.matchedCompanyId,
-        companyLocationId: purchaseOrder.matchedCompanyLocationId,
-        contactEmail: purchaseOrder.contactEmail,
-      },
-      create: {
-        shopId: input.shopId,
-        aliasType: aliasInput.aliasType,
-        sourceValue: aliasInput.sourceValue!,
-        normalizedValue,
-        customerId: purchaseOrder.matchedCustomerId,
-        companyId: purchaseOrder.matchedCompanyId,
-        companyLocationId: purchaseOrder.matchedCompanyLocationId,
-        contactEmail: purchaseOrder.contactEmail,
-      },
     });
   }
 }
