@@ -22,6 +22,7 @@ vi.mock("./storage.server", () => ({
 }));
 
 import {
+  assertInboundAuthenticationPassed,
   resolveInboundSender,
   scoreSourceDocumentCandidate,
 } from "./intake.server";
@@ -109,5 +110,37 @@ Purchase Order 10052`,
       forwardedByEmail: "sales@merchant.com",
       source: "headers",
     });
+  });
+
+  it("rejects inbound emails when SPF or DKIM fail", () => {
+    expect(() =>
+      assertInboundAuthenticationPassed(
+        {
+          headers: [
+            {
+              name: "Authentication-Results",
+              value: "mx.cloudflare.net; dkim=fail header.d=retailer.com; spf=pass",
+            },
+          ],
+        },
+        "buyer@retailer.com",
+      ),
+    ).toThrow(/Email spoofing detected/);
+  });
+
+  it("allows inbound emails when no authentication failure is reported", () => {
+    expect(() =>
+      assertInboundAuthenticationPassed(
+        {
+          headers: [
+            {
+              name: "Authentication-Results",
+              value: "mx.cloudflare.net; dkim=pass header.d=retailer.com; spf=pass",
+            },
+          ],
+        },
+        "buyer@retailer.com",
+      ),
+    ).not.toThrow();
   });
 });

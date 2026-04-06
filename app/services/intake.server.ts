@@ -260,6 +260,26 @@ export function resolveInboundSender(payload: NormalizedInboundEmailPayload): Re
   };
 }
 
+export function assertInboundAuthenticationPassed(
+  payload: NormalizedInboundEmailPayload,
+  authenticatedSenderEmail: string,
+) {
+  const authHeader =
+    payload.headers?.find(
+      (header) => normalizeHeaderName(header.name) === "authentication-results",
+    )?.value ?? "";
+  const normalizedHeader = authHeader.toLowerCase();
+
+  if (
+    normalizedHeader &&
+    (normalizedHeader.includes("dkim=fail") || normalizedHeader.includes("spf=fail"))
+  ) {
+    throw new Error(
+      `Email spoofing detected: authentication failed for ${authenticatedSenderEmail}`,
+    );
+  }
+}
+
 function inferMailboxRoutingKey(payload: NormalizedInboundEmailPayload) {
   if (payload.routingKey?.trim()) {
     return payload.routingKey.trim().toLowerCase();
@@ -750,6 +770,10 @@ export async function handleInboundEmail(
   if (!senderEmail) {
     throw new Error("Could not determine sender email from inbound email.");
   }
+  assertInboundAuthenticationPassed(
+    payload,
+    senderIdentity.forwardedByEmail ?? senderEmail,
+  );
 
   const senderName = senderIdentity.senderName;
   const dedupeHash = buildMessageHash(payload, senderEmail);

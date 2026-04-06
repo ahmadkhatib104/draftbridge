@@ -22,6 +22,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "data:prune": "tsx scripts/prune-uninstalled-shops.ts",
+    "data:prune-documents": "tsx scripts/prune-stale-documents.ts",
     "inbound:drain": "tsx scripts/process-pending-inbound.ts",
     "report:drift": "tsx scripts/report-ops-drift.ts",
     "outbound:research": "tsx scripts/build-outbound-targets.ts",

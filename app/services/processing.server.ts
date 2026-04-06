@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import type {
   AuditActorType,
   SenderProfile,
@@ -7,7 +6,6 @@ import type {
 } from "@prisma/client";
 import db from "../db.server";
 import { DRAFTBRIDGE_FREE_SUCCESS_LIMIT } from "../lib/billing";
-import { hasOpenAiConfig } from "../lib/env.server";
 import { unauthenticated } from "../shopify.server";
 import { createAuditEvent } from "./audit.server";
 import { getBillingGateDecision, recordOverageUsageCharge } from "./billing.server";
@@ -85,42 +83,6 @@ async function getUsageEventType(shopId: string) {
     : "OVERAGE_SUCCESS";
 }
 
-async function extractWithOpenAi(input: {
-  text: string;
-  model: string;
-}) {
-  if (!hasOpenAiConfig() || !input.text.trim()) {
-    return null;
-  }
-
-  const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  const completion = await client.chat.completions.create({
-    model: input.model,
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content:
-          "Extract a wholesale purchase order into JSON with poNumber, customerName, companyName, contactEmail, currency, orderDate, shipToName, shipToAddress, billToName, billToAddress, notes, confidence, and lineItems with customerSku, merchantSku, description, quantity, unitPrice, uom, confidence. Use null when unknown.",
-      },
-      {
-        role: "user",
-        content: input.text.slice(0, 12000),
-      },
-    ],
-  });
-  const content = completion.choices[0]?.message?.content?.trim();
-
-  if (!content) {
-    return null;
-  }
-
-  return extractedPoSchema.parse(JSON.parse(content));
-}
-
 function mergePurchaseOrderCandidates(
   primaryCandidate: ExtractedPurchaseOrder,
   supplementalCandidate: ExtractedPurchaseOrder | null,
@@ -168,12 +130,12 @@ async function extractCandidatePurchaseOrder(input: {
   let candidate =
     input.structuredRows.length > 0
       ? extractSpreadsheetPurchaseOrder(input.structuredRows, input.senderProfile)
-      : extractTextPurchaseOrder(primaryText, input.senderProfile);
+      : await extractTextPurchaseOrder(primaryText, input.senderProfile);
 
   if (input.supplementalText && input.sourceDocument.kind !== "EMAIL_BODY") {
     candidate = mergePurchaseOrderCandidates(
       candidate,
-      extractTextPurchaseOrder(input.supplementalText, input.senderProfile),
+      await extractTextPurchaseOrder(input.supplementalText, input.senderProfile),
     );
   }
 
@@ -181,10 +143,11 @@ async function extractCandidatePurchaseOrder(input: {
     candidate.lineItems.length === 0 ||
     (candidate.confidence ?? 0) < RETRY_THRESHOLD
   ) {
-    const openAiCandidate = await extractWithOpenAi({
-      text: primaryText,
-      model: process.env.OPENAI_PRIMARY_MODEL || "gpt-5.4-mini",
-    });
+    const openAiCandidate = await extractTextPurchaseOrder(
+      primaryText,
+      input.senderProfile,
+      process.env.OPENAI_RETRY_MODEL?.trim() || undefined,
+    );
 
     if (openAiCandidate) {
       candidate =

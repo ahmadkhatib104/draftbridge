@@ -118,6 +118,34 @@ export async function purgeShopDocumentPrefix(shopId: string) {
   return deletedCount;
 }
 
+export async function deleteStoredDocumentKeys(keys: string[]) {
+  const client = getR2Client();
+
+  if (!client || keys.length === 0) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+
+  for (let index = 0; index < keys.length; index += 1000) {
+    const batch = keys.slice(index, index + 1000);
+
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: process.env.R2_BUCKET!,
+        Delete: {
+          Objects: batch.map((key) => ({ Key: key })),
+          Quiet: true,
+        },
+      }),
+    );
+
+    deletedCount += batch.length;
+  }
+
+  return deletedCount;
+}
+
 export async function getStoredDocumentContentBase64(input: {
   storageProvider: string;
   storageKey?: string | null;

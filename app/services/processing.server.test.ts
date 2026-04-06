@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { parseSpreadsheetHints } from "../lib/spreadsheet-hints";
 import {
   extractSpreadsheetPurchaseOrder,
@@ -6,17 +6,19 @@ import {
 } from "./extraction.server";
 
 describe("purchase order extraction", () => {
-  it("extracts a po number and line items from plain text", () => {
-    const result = extractTextPurchaseOrder(
+  beforeEach(() => {
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it("falls back to a low-confidence placeholder when AI text extraction is unavailable", async () => {
+    const result = await extractTextPurchaseOrder(
       "PO 10052\nCustomer: Big Box Retail\nSKU DB-001 qty 12 price 18.00",
       null,
     );
 
-    expect(result.poNumber).toBe("10052");
-    expect(result.companyName).toBe("Big Box Retail");
-    expect(result.lineItems).toHaveLength(1);
-    expect(result.lineItems[0]?.merchantSku).toBe("DB-001");
-    expect(result.lineItems[0]?.quantity).toBe(12);
+    expect(result.poNumber).toBeNull();
+    expect(result.confidence).toBe(0.4);
+    expect(result.lineItems).toEqual([]);
   });
 
   it("extracts structured spreadsheet rows", () => {

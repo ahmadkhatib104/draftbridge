@@ -20,6 +20,10 @@ api_version = "2026-04"
   uri = "/webhooks/app/subscriptions_update"
 
   [[webhooks.subscriptions]]
+  topics = [ "draft_orders/delete" ]
+  uri = "/webhooks/draft_orders/delete"
+
+  [[webhooks.subscriptions]]
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
   uri = "/webhooks/compliance"
 

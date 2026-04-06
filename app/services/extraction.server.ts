@@ -1,5 +1,7 @@
+import OpenAI from "openai";
 import type { SenderProfile } from "@prisma/client";
 import { z } from "zod";
+import { hasOpenAiConfig } from "../lib/env.server";
 import {
   parseSpreadsheetHints,
   type SpreadsheetHintKey,
@@ -34,6 +36,8 @@ export const extractedPoSchema = z.object({
 
 export type ExtractedPurchaseOrder = z.infer<typeof extractedPoSchema>;
 
+let openAiClient: OpenAI | null = null;
+
 export function normalizeValue(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
@@ -62,6 +66,58 @@ function detectRowColumnWithHints(
   const hintVariants = hintKey ? parsedHints[hintKey] ?? [] : [];
 
   return detectRowColumn(headers, [...hintVariants, ...defaults]);
+}
+
+function getOpenAiClient() {
+  if (!hasOpenAiConfig()) {
+    return null;
+  }
+
+  if (!openAiClient) {
+    openAiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+
+  return openAiClient;
+}
+
+function coerceNullableString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function coerceNullableNumber(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim().replace(/[$,]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function buildLowConfidenceTextExtraction(
+  text: string,
+  senderProfile: SenderProfile | null,
+) {
+  return extractedPoSchema.parse({
+    poNumber: null,
+    customerName: senderProfile?.customerName ?? senderProfile?.companyName ?? null,
+    companyName: senderProfile?.companyName ?? null,
+    contactEmail: senderProfile?.contactEmail ?? senderProfile?.senderEmail ?? null,
+    currency: parseCurrencySymbol(text) ?? senderProfile?.defaultCurrency ?? "USD",
+    notes: text.trim().slice(0, 500) || null,
+    confidence: 0.4,
+    lineItems: [],
+  });
 }
 
 export function extractSpreadsheetPurchaseOrder(
@@ -166,75 +222,108 @@ export function extractSpreadsheetPurchaseOrder(
   });
 }
 
-export function extractTextPurchaseOrder(text: string, senderProfile: SenderProfile | null) {
-  const poNumber =
-    text.match(/(?:po(?: number)?|purchase order|order)[#:\s-]*([a-z0-9-]+)/i)?.[1] ??
-    null;
-  const contactEmail =
-    text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ??
-    senderProfile?.contactEmail ??
-    senderProfile?.senderEmail ??
-    null;
-  const companyName =
-    text.match(/(?:customer|company|account)[:\s]+(.+)/i)?.[1]?.split("\n")[0]?.trim() ??
-    senderProfile?.companyName ??
-    null;
-  const currency = parseCurrencySymbol(text) ?? senderProfile?.defaultCurrency ?? "USD";
+export async function extractTextPurchaseOrder(
+  text: string,
+  senderProfile: SenderProfile | null,
+  modelOverride?: string,
+) {
+  const trimmedText = text.trim();
 
-  const lineItems = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .map((line) => {
-      const usesQuantityPattern = /qty|quantity/i.test(line);
-      const regexMatch =
-        line.match(
-          /(?:sku[:#\s-]*([A-Z0-9._-]+))?.*?(?:qty|quantity)[:\s]*([0-9]+).*?(?:price|unit price)?[:\s$]*([0-9]+(?:\.[0-9]{1,2})?)/i,
-        ) ||
-        line.match(/([A-Z0-9._-]{3,})\s+(.+?)\s+([0-9]+)\s+\$?([0-9]+(?:\.[0-9]{1,2})?)$/i);
+  if (!trimmedText) {
+    return buildLowConfidenceTextExtraction(text, senderProfile);
+  }
 
-      if (!regexMatch) {
-        return null;
-      }
+  const client = getOpenAiClient();
 
-      if (usesQuantityPattern) {
-        return {
-          merchantSku: regexMatch[1] || null,
-          customerSku: null,
-          description: line,
-          quantity: Number(regexMatch[2]) || null,
-          unitPrice: Number(regexMatch[3]) || null,
-          uom: "each",
-          confidence: 0.72,
-        };
-      }
+  if (!client) {
+    return buildLowConfidenceTextExtraction(text, senderProfile);
+  }
 
-      return {
-        merchantSku: regexMatch[1] || null,
-        customerSku: null,
-        description: regexMatch[2] || line,
-        quantity: Number(regexMatch[3]) || null,
-        unitPrice: Number(regexMatch[4]) || null,
-        uom: "each",
-        confidence: 0.74,
-      };
-    })
-    .filter((lineItem): lineItem is NonNullable<typeof lineItem> => Boolean(lineItem));
+  const response = await client.chat.completions.create({
+    model: modelOverride?.trim() || process.env.OPENAI_PRIMARY_MODEL?.trim() || "gpt-4o-mini",
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You extract purchase order details into JSON matching this exact schema:
+{
+  "poNumber": string | null,
+  "companyName": string | null,
+  "contactEmail": string | null,
+  "orderDate": string | null,
+  "notes": string | null,
+  "lineItems": [
+    {
+      "merchantSku": string | null,
+      "description": string,
+      "quantity": number,
+      "unitPrice": number,
+      "uom": string
+    }
+  ]
+}`,
+      },
+      {
+        role: "user",
+        content: `Extract from this raw PO text. Sender Email: ${
+          senderProfile?.senderEmail ?? "unknown"
+        }\n\n${trimmedText.slice(0, 5000)}`,
+      },
+    ],
+  });
+
+  const parsed = JSON.parse(response.choices[0]?.message?.content?.trim() || "{}") as {
+    poNumber?: unknown;
+    companyName?: unknown;
+    contactEmail?: unknown;
+    orderDate?: unknown;
+    notes?: unknown;
+    lineItems?: unknown;
+  };
+
+  const normalizedLineItems = Array.isArray(parsed.lineItems)
+    ? parsed.lineItems
+        .map((lineItem) => {
+          const candidate = typeof lineItem === "object" && lineItem ? lineItem : {};
+          const record = candidate as Record<string, unknown>;
+
+          return {
+            customerSku: null,
+            merchantSku: coerceNullableString(record.merchantSku),
+            description: coerceNullableString(record.description),
+            quantity: coerceNullableNumber(record.quantity),
+            unitPrice: coerceNullableNumber(record.unitPrice),
+            uom: coerceNullableString(record.uom),
+            confidence: 0.92,
+          };
+        })
+        .filter(
+          (lineItem) =>
+            lineItem.merchantSku ||
+            lineItem.description ||
+            lineItem.quantity ||
+            lineItem.unitPrice,
+        )
+    : [];
 
   return extractedPoSchema.parse({
-    poNumber,
-    customerName: companyName,
-    companyName,
-    contactEmail,
-    currency,
-    orderDate:
-      text.match(/(?:date|order date)[:\s]+([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})/i)?.[1] ??
+    poNumber: coerceNullableString(parsed.poNumber),
+    customerName:
+      senderProfile?.customerName ??
+      coerceNullableString(parsed.companyName) ??
+      senderProfile?.companyName ??
       null,
-    shipToName:
-      text.match(/ship to[:\s]+(.+)/i)?.[1]?.split("\n")[0]?.trim() ?? null,
-    billToName:
-      text.match(/bill to[:\s]+(.+)/i)?.[1]?.split("\n")[0]?.trim() ?? null,
-    notes: text.slice(0, 500),
-    confidence: lineItems.length > 0 ? 0.72 : 0.42,
-    lineItems,
+    companyName: coerceNullableString(parsed.companyName) ?? senderProfile?.companyName ?? null,
+    contactEmail:
+      coerceNullableString(parsed.contactEmail) ??
+      senderProfile?.contactEmail ??
+      senderProfile?.senderEmail ??
+      null,
+    currency: parseCurrencySymbol(trimmedText) ?? senderProfile?.defaultCurrency ?? "USD",
+    orderDate: coerceNullableString(parsed.orderDate),
+    notes: coerceNullableString(parsed.notes) ?? trimmedText.slice(0, 500),
+    confidence: normalizedLineItems.length > 0 ? 0.92 : 0.4,
+    lineItems: normalizedLineItems,
   });
 }
