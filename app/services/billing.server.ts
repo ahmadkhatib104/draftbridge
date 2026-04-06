@@ -1,7 +1,8 @@
-import { Prisma, type BillingState } from "@prisma/client";
+import { Prisma, type BillingPlan, type BillingState, type BillingStatus } from "@prisma/client";
 import db from "../db.server";
 import {
   BILLING_PAGE_PATH,
+  DRAFTBRIDGE_FREE_SUCCESS_LIMIT,
   DRAFTBRIDGE_TRIAL_DAYS,
   type PaidBillingPlan,
   getIncludedUsageLimit,
@@ -107,6 +108,18 @@ export interface BillingDiagnostics {
   currentPeriodEnd: string | null;
 }
 
+export type BillingGateReason = "FREE_LIMIT_REACHED" | "SUBSCRIPTION_REQUIRED";
+
+export interface BillingGateDecision {
+  blocked: boolean;
+  reason: BillingGateReason | null;
+  message: string | null;
+  usageCount: number;
+  freeSuccessLimit: number;
+  plan: BillingPlan;
+  status: BillingStatus;
+}
+
 type BillingStateUpsertInput = {
   shopId: string;
   create: Omit<Prisma.BillingStateUncheckedCreateInput, "shopId">;
@@ -153,6 +166,18 @@ export function getBillingTestMode() {
   return process.env.NODE_ENV !== "production";
 }
 
+function hasTrialWindowElapsed(billingState: BillingState | null | undefined) {
+  if (!billingState?.currentPeriodStart || billingState.status !== "TRIAL") {
+    return false;
+  }
+
+  return (
+    billingState.currentPeriodStart.getTime() +
+      DRAFTBRIDGE_TRIAL_DAYS * 24 * 60 * 60 * 1000 <=
+    Date.now()
+  );
+}
+
 export function normalizeInAppPath(path: string | null | undefined) {
   if (!path) {
     return BILLING_PAGE_PATH;
@@ -180,6 +205,83 @@ export function buildBillingReturnUrl(path: string | null | undefined, request?:
   }
 
   return target.toString();
+}
+
+export function buildBillingGateRedirectPath(input: {
+  currentPath: string;
+  reason: BillingGateReason;
+}) {
+  const target = new URL(BILLING_PAGE_PATH, "https://draftbridge.local");
+  const currentUrl = new URL(normalizeInAppPath(input.currentPath), "https://draftbridge.local");
+
+  for (const param of ["embedded", "host", "shop", "locale"]) {
+    const value = currentUrl.searchParams.get(param);
+
+    if (value) {
+      target.searchParams.set(param, value);
+    }
+  }
+
+  target.searchParams.set("returnPath", normalizeInAppPath(input.currentPath));
+  target.searchParams.set("gate", input.reason);
+  return `${target.pathname}${target.search}`;
+}
+
+export function getBillingGateMessage(reason: BillingGateReason) {
+  switch (reason) {
+    case "FREE_LIMIT_REACHED":
+      return `DraftBridge included ${DRAFTBRIDGE_FREE_SUCCESS_LIMIT} free successful purchase orders. Choose a plan to keep auto-creating draft orders.`;
+    case "SUBSCRIPTION_REQUIRED":
+      return "DraftBridge billing needs attention before more draft orders can be created. Restart or update your plan to continue processing inbound POs.";
+    default:
+      return "DraftBridge billing needs attention before more draft orders can be created.";
+  }
+}
+
+export function evaluateBillingGate(input: {
+  plan: BillingPlan | null | undefined;
+  status: BillingStatus | null | undefined;
+  usageCount: number;
+}) {
+  const plan = input.plan ?? "FREE";
+  const status = input.status ?? "INACTIVE";
+
+  if (isBillingActiveStatus(status)) {
+    return {
+      blocked: false,
+      reason: null,
+      message: null,
+      usageCount: input.usageCount,
+      freeSuccessLimit: DRAFTBRIDGE_FREE_SUCCESS_LIMIT,
+      plan,
+      status,
+    } satisfies BillingGateDecision;
+  }
+
+  if (input.usageCount < DRAFTBRIDGE_FREE_SUCCESS_LIMIT) {
+    return {
+      blocked: false,
+      reason: null,
+      message: null,
+      usageCount: input.usageCount,
+      freeSuccessLimit: DRAFTBRIDGE_FREE_SUCCESS_LIMIT,
+      plan,
+      status,
+    } satisfies BillingGateDecision;
+  }
+
+  const reason: BillingGateReason =
+    plan === "FREE" ? "FREE_LIMIT_REACHED" : "SUBSCRIPTION_REQUIRED";
+
+  return {
+    blocked: true,
+    reason,
+    message: getBillingGateMessage(reason),
+    usageCount: input.usageCount,
+    freeSuccessLimit: DRAFTBRIDGE_FREE_SUCCESS_LIMIT,
+    plan,
+    status,
+  } satisfies BillingGateDecision;
 }
 
 export async function requestOfflineBillingConfirmation(input: {
@@ -467,6 +569,7 @@ export async function syncBillingStateIfStale(input: {
   });
   const isFresh =
     existing &&
+    !hasTrialWindowElapsed(existing) &&
     Date.now() - existing.updatedAt.getTime() < BILLING_SYNC_WINDOW_MS;
 
   if (!input.force && isFresh) {
@@ -533,6 +636,30 @@ async function getUsageCount(shopId: string, billingState: BillingState | null) 
   });
 }
 
+export async function getBillingGateDecision(input: {
+  shopId: string;
+  shopDomain: string;
+  admin: AdminGraphqlClient;
+}) {
+  const billingState = await syncBillingStateIfStale({
+    shopId: input.shopId,
+    shopDomain: input.shopDomain,
+    admin: input.admin,
+  });
+
+  const usageCount = await getUsageCount(input.shopId, billingState);
+  const effectiveStatus =
+    billingState?.status === "TRIAL" && hasTrialWindowElapsed(billingState)
+      ? "INACTIVE"
+      : billingState?.status;
+
+  return evaluateBillingGate({
+    plan: billingState?.plan,
+    status: effectiveStatus,
+    usageCount,
+  });
+}
+
 function getStatusLabel(status: BillingState["status"]) {
   switch (status) {
     case "TRIAL":
@@ -569,7 +696,9 @@ function getTrialDaysRemaining(billingState: BillingState | null) {
 export async function getBillingUiState(shopId: string, billingState: BillingState | null) {
   const usageCount = await getUsageCount(shopId, billingState);
   const includedUsageLimit =
-    billingState?.includedUsageLimit ?? getIncludedUsageLimit(billingState?.plan);
+    billingState?.plan === "FREE"
+      ? DRAFTBRIDGE_FREE_SUCCESS_LIMIT
+      : billingState?.includedUsageLimit ?? getIncludedUsageLimit(billingState?.plan);
   const overageUsageCount = Math.max(usageCount - includedUsageLimit, 0);
   const planCatalogEntry = getPlanCatalogEntry(billingState?.plan);
 

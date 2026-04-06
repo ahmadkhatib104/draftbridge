@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, redirect, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
@@ -7,11 +7,35 @@ import {
   EmbeddedNavLink,
 } from "../components/embedded-navigation";
 import { APP_NAVIGATION } from "../lib/product";
-import { getBillingUiState, syncBillingStateIfStale } from "../services/billing.server";
+import {
+  BILLING_PAGE_PATH,
+} from "../lib/billing";
+import {
+  buildBillingGateRedirectPath,
+  getBillingGateDecision,
+  getBillingUiState,
+  syncBillingStateIfStale,
+} from "../services/billing.server";
 import { requireShopContext } from "../services/shop-context.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, shop } = await requireShopContext(request);
+  const requestUrl = new URL(request.url);
+  const gate = await getBillingGateDecision({
+    shopId: shop.id,
+    shopDomain: shop.shopDomain,
+    admin,
+  });
+
+  if (gate.blocked && requestUrl.pathname !== BILLING_PAGE_PATH) {
+    throw redirect(
+      buildBillingGateRedirectPath({
+        currentPath: `${requestUrl.pathname}${requestUrl.search}`,
+        reason: gate.reason ?? "SUBSCRIPTION_REQUIRED",
+      }),
+    );
+  }
+
   const billingState = await syncBillingStateIfStale({
     shopId: shop.id,
     shopDomain: shop.shopDomain,

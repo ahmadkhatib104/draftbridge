@@ -11,7 +11,12 @@ vi.mock("../shopify.server", () => ({
   },
 }));
 
-import { createDraftOrder, searchCustomers } from "./shopify-admin.server";
+import {
+  createDraftOrder,
+  getShopContact,
+  searchCustomers,
+  sendDraftOrderMerchantNotification,
+} from "./shopify-admin.server";
 
 describe("shopify admin service", () => {
   beforeEach(() => {
@@ -216,5 +221,70 @@ describe("shopify admin service", () => {
         legacyId: "11",
       },
     ]);
+  });
+
+  it("sends Shopify invoice notifications to the merchant mailbox", async () => {
+    graphqlMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            draftOrderInvoiceSend: {
+              draftOrder: {
+                id: "gid://shopify/DraftOrder/42",
+                invoiceSentAt: "2026-04-05T10:00:00Z",
+              },
+              userErrors: [],
+            },
+          },
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await sendDraftOrderMerchantNotification({
+      shopDomain: "example.myshopify.com",
+      draftOrderId: "gid://shopify/DraftOrder/42",
+      toEmail: "ops@example.com",
+      subject: "DraftBridge created #D42",
+      customMessage: "Buyer contact: buyer@example.com\n\nInvoice: https://example.com/invoice",
+    });
+
+    const [query, options] = graphqlMock.mock.calls[0] ?? [];
+    expect(query).toContain("mutation DraftBridgeDraftOrderInvoiceSend");
+    expect(options?.variables).toEqual({
+      id: "gid://shopify/DraftOrder/42",
+      email: {
+        to: "ops@example.com",
+        subject: "DraftBridge created #D42",
+        customMessage: "Buyer contact: buyer@example.com\n\nInvoice: https://example.com/invoice",
+      },
+    });
+  });
+
+  it("fetches the live shop email for merchant notifications", async () => {
+    graphqlMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            shop: {
+              email: "owner@example.com",
+              name: "DraftBridge QA",
+            },
+          },
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await getShopContact("example.myshopify.com");
+
+    expect(result).toEqual({
+      email: "owner@example.com",
+      name: "DraftBridge QA",
+    });
   });
 });

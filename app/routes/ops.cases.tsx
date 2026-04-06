@@ -5,6 +5,7 @@ import {
   learnFromPurchaseOrderCorrections,
   savePurchaseOrderCorrections,
 } from "../services/memory.server";
+import { assertOpsAccess, buildOpsPath } from "../services/ops-auth.server";
 import {
   requestMerchantClarification,
   retryPurchaseOrderResolution,
@@ -16,22 +17,6 @@ function formatTimestamp(value: Date) {
     timeStyle: "short",
     timeZone: "UTC",
   }).format(value);
-}
-
-function assertOpsAccess(request: Request) {
-  const expectedToken = process.env.OPS_DASHBOARD_TOKEN?.trim();
-
-  if (!expectedToken) {
-    throw new Response("OPS_DASHBOARD_TOKEN is not configured.", { status: 503 });
-  }
-
-  const requestUrl = new URL(request.url);
-  const providedToken =
-    request.headers.get("x-ops-token") || requestUrl.searchParams.get("token");
-
-  if (providedToken !== expectedToken) {
-    throw new Response("Unauthorized", { status: 401 });
-  }
 }
 
 function readStringField(formData: FormData, key: string) {
@@ -85,6 +70,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   return {
+    billingPath: buildOpsPath(request, "/ops/billing"),
     cases: cases.map((opsCase) => ({
       ...opsCase,
       purchaseOrder: {
@@ -193,7 +179,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function OpsCasesRoute() {
-  const { cases } = useLoaderData<typeof loader>();
+  const { billingPath, cases } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -201,6 +187,9 @@ export default function OpsCasesRoute() {
   return (
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: "2rem 1.25rem" }}>
       <h1>DraftBridge Ops Queue</h1>
+      <p style={{ marginTop: "-0.5rem" }}>
+        <a href={billingPath}>Open billing diagnostics</a>
+      </p>
       {actionData && !actionData.ok ? (
         <p style={{ color: "#8a1f11" }}>{actionData.error}</p>
       ) : null}

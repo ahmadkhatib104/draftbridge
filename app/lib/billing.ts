@@ -2,6 +2,7 @@ import type { BillingPlan, BillingStatus } from "@prisma/client";
 
 export const BILLING_PAGE_PATH = "/app/billing";
 export const DRAFTBRIDGE_TRIAL_DAYS = 14;
+export const DRAFTBRIDGE_FREE_SUCCESS_LIMIT = 3;
 
 export const SHOPIFY_PLAN_NAMES = {
   STARTER: "DraftBridge Starter",
@@ -94,6 +95,10 @@ export function getKnownShopifyPlanNames() {
 }
 
 export function getIncludedUsageLimit(plan: BillingPlan | null | undefined) {
+  if (plan === "FREE") {
+    return DRAFTBRIDGE_FREE_SUCCESS_LIMIT;
+  }
+
   return getPlanCatalogEntry(plan)?.includedUsageLimit ?? 0;
 }
 

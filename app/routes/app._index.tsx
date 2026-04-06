@@ -1,7 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { Link, useLoaderData } from "react-router";
 import {
-  getBillingDiagnostics,
   getBillingUiState,
   syncBillingStateIfStale,
 } from "../services/billing.server";
@@ -20,21 +19,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     getBillingUiState(shop.id, billingState),
     getDashboardSnapshot(shop.id),
   ]);
-  const [billingDiagnostics, report] = await Promise.all([
-    getBillingDiagnostics({
-      shopId: shop.id,
-      billingState,
-      admin,
-    }),
-    getOperationalReport({
-      shopId: shop.id,
-    }),
-  ]);
+  const report = await getOperationalReport({
+    shopId: shop.id,
+  });
 
   return {
     shop,
     billing,
-    billingDiagnostics,
     dashboard,
     report,
   };
@@ -45,8 +36,7 @@ function percent(value: number) {
 }
 
 export default function AppIndex() {
-  const { shop, billing, billingDiagnostics, dashboard, report } =
-    useLoaderData<typeof loader>();
+  const { shop, billing, dashboard, report } = useLoaderData<typeof loader>();
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -167,18 +157,6 @@ export default function AppIndex() {
             </s-paragraph>
             <s-paragraph>
               Review rate {percent(report.current.reviewRate)} | Failure rate {percent(report.current.failureRate)}
-            </s-paragraph>
-          </s-card>
-
-          <s-card heading="Usage billing">
-            <s-paragraph>
-              Usage line item attached: {billingDiagnostics.activeSubscription?.hasUsageLineItem ? "Yes" : "No"}
-            </s-paragraph>
-            <s-paragraph>
-              Included successes: {billingDiagnostics.includedSuccessCount} | Overage successes: {billingDiagnostics.overageSuccessCount}
-            </s-paragraph>
-            <s-paragraph>
-              Billed overages: {billingDiagnostics.billedOverageCount} | Pending: {billingDiagnostics.pendingOverageCount}
             </s-paragraph>
           </s-card>
 

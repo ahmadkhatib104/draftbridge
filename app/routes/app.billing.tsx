@@ -19,7 +19,7 @@ import {
 } from "../shopify.server";
 import {
   buildBillingReturnUrl,
-  getBillingDiagnostics,
+  getBillingGateMessage,
   getBillingTestMode,
   getBillingUiState,
   normalizeInAppPath,
@@ -49,6 +49,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const returnPath = normalizeInAppPath(
     url.searchParams.get("returnPath") || BILLING_PAGE_PATH,
   );
+  const gateReason = url.searchParams.get("gate");
   const { admin, shop, billing } = await requireShopContext(request);
   let billingState = await syncBillingStateIfStale({
     shopId: shop.id,
@@ -86,15 +87,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   const billingUi = await getBillingUiState(shop.id, billingState);
-  const diagnostics = await getBillingDiagnostics({
-    shopId: shop.id,
-    billingState,
-    admin,
-  });
 
   return {
     billing: billingUi,
-    diagnostics,
+    gateMessage:
+      gateReason === "FREE_LIMIT_REACHED" || gateReason === "SUBSCRIPTION_REQUIRED"
+        ? getBillingGateMessage(gateReason)
+        : null,
     plans: getBillingPlanCatalog(),
     returnPath,
     activeSubscriptions: billingCheck.appSubscriptions.map((subscription) => ({
@@ -210,7 +209,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function BillingRoute() {
-  const { billing, diagnostics, plans, returnPath, activeSubscriptions } =
+  const { billing, gateMessage, plans, returnPath, activeSubscriptions } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
@@ -247,23 +246,11 @@ export default function BillingRoute() {
           <s-paragraph>Overage count: {billing.overageUsageCount}</s-paragraph>
         </s-card>
 
-        <s-card heading="Billing diagnostics">
-          <s-paragraph>
-            Active subscription: {diagnostics.activeSubscription?.name ?? "None"}
-          </s-paragraph>
-          <s-paragraph>
-            Usage line item attached: {diagnostics.activeSubscription?.hasUsageLineItem ? "Yes" : "No"}
-          </s-paragraph>
-          <s-paragraph>
-            Included successes: {diagnostics.includedSuccessCount} | Overage successes: {diagnostics.overageSuccessCount}
-          </s-paragraph>
-          <s-paragraph>
-            Billed overages: {diagnostics.billedOverageCount} | Pending overages: {diagnostics.pendingOverageCount}
-          </s-paragraph>
-          {diagnostics.activeSubscription?.usageTerms ? (
-            <s-paragraph>{diagnostics.activeSubscription.usageTerms}</s-paragraph>
-          ) : null}
-        </s-card>
+        {gateMessage ? (
+          <s-banner heading="Billing update required" tone="warning">
+            <s-paragraph>{gateMessage}</s-paragraph>
+          </s-banner>
+        ) : null}
 
         {actionData?.error ? (
           <s-banner tone="critical" heading="Billing action failed">

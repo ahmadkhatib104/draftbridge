@@ -19,6 +19,11 @@ interface CompanyContactCandidate {
   companyGid: string;
 }
 
+interface ShopContact {
+  email: string | null;
+  name: string | null;
+}
+
 function isRecoverableShopifyReadError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
 
@@ -270,6 +275,93 @@ export async function createDraftOrder(input: {
 
   if (!draftOrder) {
     throw new Error("Shopify did not return a draft order.");
+  }
+
+  return draftOrder;
+}
+
+export async function getShopContact(shopDomain: string) {
+  const payload = await adminGraphql<{
+    data?: {
+      shop?: {
+        email?: string | null;
+        name?: string | null;
+      } | null;
+    };
+  }>(
+    shopDomain,
+    `#graphql
+      query DraftBridgeShopContact {
+        shop {
+          email
+          name
+        }
+      }`,
+  );
+
+  return {
+    email: payload.data?.shop?.email?.trim() || null,
+    name: payload.data?.shop?.name?.trim() || null,
+  } satisfies ShopContact;
+}
+
+export async function sendDraftOrderMerchantNotification(input: {
+  shopDomain: string;
+  draftOrderId: string;
+  toEmail: string;
+  subject: string;
+  customMessage: string;
+}) {
+  const payload = await adminGraphql<{
+    data?: {
+      draftOrderInvoiceSend?: {
+        draftOrder?: {
+          id: string;
+          invoiceSentAt?: string | null;
+        } | null;
+        userErrors?: Array<{
+          field?: string[] | null;
+          message?: string | null;
+        }> | null;
+      } | null;
+    };
+  }>(
+    input.shopDomain,
+    `#graphql
+      mutation DraftBridgeDraftOrderInvoiceSend($id: ID!, $email: EmailInput) {
+        draftOrderInvoiceSend(id: $id, email: $email) {
+          draftOrder {
+            id
+            invoiceSentAt
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }`,
+    {
+      id: input.draftOrderId,
+      email: {
+        to: input.toEmail,
+        subject: input.subject,
+        customMessage: input.customMessage,
+      },
+    },
+  );
+
+  const userError = payload.data?.draftOrderInvoiceSend?.userErrors?.find(
+    (error) => error.message,
+  );
+
+  if (userError?.message) {
+    throw new Error(userError.message);
+  }
+
+  const draftOrder = payload.data?.draftOrderInvoiceSend?.draftOrder;
+
+  if (!draftOrder?.id) {
+    throw new Error("Shopify did not confirm the draft-order notification email.");
   }
 
   return draftOrder;

@@ -6,9 +6,11 @@ import type {
   ValidationSeverity,
 } from "@prisma/client";
 import db from "../db.server";
+import { DRAFTBRIDGE_FREE_SUCCESS_LIMIT } from "../lib/billing";
 import { hasOpenAiConfig } from "../lib/env.server";
+import { unauthenticated } from "../shopify.server";
 import { createAuditEvent } from "./audit.server";
-import { recordOverageUsageCharge } from "./billing.server";
+import { getBillingGateDecision, recordOverageUsageCharge } from "./billing.server";
 import type { ParsedSpreadsheetRow } from "./document-parser.server";
 import {
   extractedPoSchema,
@@ -21,9 +23,11 @@ import { refreshSenderLearning } from "./memory.server";
 import { advanceOnboardingStatus } from "./shop.server";
 import {
   createDraftOrder,
+  getShopContact,
   getVariantByLegacyId,
   searchCustomers,
   searchProductVariants,
+  sendDraftOrderMerchantNotification,
 } from "./shopify-admin.server";
 
 const AUTO_CREATE_THRESHOLD = 0.92;
@@ -51,6 +55,7 @@ async function getUsageEventType(shopId: string) {
   const billingState = await db.billingState.findUnique({
     where: { shopId },
     select: {
+      plan: true,
       includedUsageLimit: true,
       currentPeriodStart: true,
     },
@@ -70,7 +75,12 @@ async function getUsageEventType(shopId: string) {
     },
   });
 
-  return usageCount < (billingState?.includedUsageLimit ?? 0)
+  const includedUsageLimit =
+    billingState?.plan === "FREE"
+      ? DRAFTBRIDGE_FREE_SUCCESS_LIMIT
+      : billingState?.includedUsageLimit ?? 0;
+
+  return usageCount < includedUsageLimit
     ? "INCLUDED_SUCCESS"
     : "OVERAGE_SUCCESS";
 }
@@ -527,7 +537,12 @@ async function recordUsageSuccess(input: {
 function buildOpsSummary(input: {
   hasBlockingIssues: boolean;
   finalConfidence: number;
+  billingBlocked?: boolean;
 }) {
+  if (input.billingBlocked) {
+    return "Billing action required before DraftBridge can create more draft orders.";
+  }
+
   if (input.hasBlockingIssues) {
     return "Purchase order contains blocking validation issues.";
   }
@@ -537,6 +552,83 @@ function buildOpsSummary(input: {
   }
 
   return "Purchase order requires manual review.";
+}
+
+async function resolveMerchantNotificationRecipient(input: {
+  shopId: string;
+  shopDomain: string;
+}) {
+  const shop = await db.shop.findUnique({
+    where: { id: input.shopId },
+    include: {
+      users: {
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      },
+    },
+  });
+
+  if (!shop) {
+    return null;
+  }
+
+  if (shop.email?.trim()) {
+    return shop.email.trim();
+  }
+
+  const liveShopContact = await getShopContact(input.shopDomain);
+
+  if (!liveShopContact.email) {
+    return shop.users[0]?.email?.trim() || null;
+  }
+
+  await db.shop.update({
+    where: { id: shop.id },
+    data: {
+      email: liveShopContact.email,
+      name: liveShopContact.name ?? undefined,
+    },
+  });
+
+  return liveShopContact.email;
+}
+
+async function notifyMerchantOfDraftOrder(input: {
+  shopId: string;
+  shopDomain: string;
+  draftOrderId: string;
+  draftOrderName: string | null;
+  invoiceUrl: string | null;
+  poNumber: string | null;
+  contactEmail: string | null;
+}) {
+  const merchantEmail = await resolveMerchantNotificationRecipient({
+    shopId: input.shopId,
+    shopDomain: input.shopDomain,
+  });
+
+  if (!merchantEmail || !input.invoiceUrl) {
+    return;
+  }
+
+  const subject = `DraftBridge created ${input.draftOrderName ?? "a draft order"} for ${input.contactEmail ?? "your wholesale contact"}`;
+  const customMessage = [
+    input.poNumber ? `PO ${input.poNumber} is ready in Shopify.` : "A new wholesale PO is ready in Shopify.",
+    input.contactEmail ? `Buyer contact: ${input.contactEmail}.` : null,
+    `Review the draft order and invoice link: ${input.invoiceUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  await sendDraftOrderMerchantNotification({
+    shopDomain: input.shopDomain,
+    draftOrderId: input.draftOrderId,
+    toEmail: merchantEmail,
+    subject,
+    customMessage,
+  });
+
+  return merchantEmail;
 }
 
 async function seedPurchaseOrderFromCandidate(input: {
@@ -839,7 +931,44 @@ export async function retryPurchaseOrderResolution(input: {
     customerMatch.confidence,
     ...lineConfidence,
   ]);
-  const hasBlockingIssues = validationIssues.some((issue) => issue.blocking);
+  let hasBlockingIssues = validationIssues.some((issue) => issue.blocking);
+  let billingGateBlocked = false;
+
+  if (!hasBlockingIssues && finalConfidence >= AUTO_CREATE_THRESHOLD) {
+    const { admin } = await unauthenticated.admin(input.shopDomain);
+    const billingGate = await getBillingGateDecision({
+      shopId: purchaseOrder.shopId,
+      shopDomain: input.shopDomain,
+      admin,
+    });
+
+    if (billingGate.blocked && billingGate.reason) {
+      billingGateBlocked = true;
+      hasBlockingIssues = true;
+      validationIssues.push({
+        severity: "ERROR",
+        code: "BILLING_REQUIRED",
+        message: billingGate.message ?? "Billing must be updated before DraftBridge can create more draft orders.",
+        blocking: true,
+      });
+
+      await createAuditEvent({
+        shopId: purchaseOrder.shopId,
+        purchaseOrderId: purchaseOrder.id,
+        entityType: "BILLING",
+        entityId: purchaseOrder.shopId,
+        action: "BILLING_GATE_BLOCKED",
+        summary: billingGate.message ?? "Billing blocked auto-draft processing.",
+        metadata: {
+          billingPlan: billingGate.plan,
+          billingStatus: billingGate.status,
+          billingUsageCount: billingGate.usageCount,
+          freeSuccessLimit: billingGate.freeSuccessLimit,
+          reason: billingGate.reason,
+        },
+      });
+    }
+  }
 
   await syncValidationIssues({
     shopId: purchaseOrder.shopId,
@@ -874,6 +1003,7 @@ export async function retryPurchaseOrderResolution(input: {
       summary: buildOpsSummary({
         hasBlockingIssues,
         finalConfidence,
+        billingBlocked: billingGateBlocked,
       }),
     });
 
@@ -895,6 +1025,7 @@ export async function retryPurchaseOrderResolution(input: {
 
     let draftOrderId = existingDraftOrder?.shopifyDraftOrderId ?? null;
     let draftOrderName = existingDraftOrder?.shopifyDraftOrderName ?? null;
+    let draftOrderInvoiceUrl: string | null = null;
 
     if (!draftOrderId) {
       const draftOrder = await createDraftOrder({
@@ -911,6 +1042,7 @@ export async function retryPurchaseOrderResolution(input: {
 
       draftOrderId = String(draftOrder.id);
       draftOrderName = draftOrder.name;
+      draftOrderInvoiceUrl = draftOrder.invoiceUrl ?? null;
 
       await db.draftOrderSync.upsert({
         where: { purchaseOrderId: purchaseOrder.id },
@@ -970,6 +1102,76 @@ export async function retryPurchaseOrderResolution(input: {
       purchaseOrderId: purchaseOrder.id,
       summary: `Draft order ${draftOrderName ?? draftOrderId ?? ""} created successfully.`,
     });
+
+    if (draftOrderId && draftOrderInvoiceUrl) {
+      try {
+        const merchantEmail = await notifyMerchantOfDraftOrder({
+          shopId: purchaseOrder.shopId,
+          shopDomain: input.shopDomain,
+          draftOrderId,
+          draftOrderName,
+          invoiceUrl: draftOrderInvoiceUrl,
+          poNumber: purchaseOrder.poNumber,
+          contactEmail: purchaseOrder.contactEmail,
+        });
+
+        if (merchantEmail) {
+          try {
+            await createAuditEvent({
+              shopId: purchaseOrder.shopId,
+              purchaseOrderId: purchaseOrder.id,
+              entityType: "DRAFT_ORDER",
+              entityId: draftOrderId,
+              action: "DRAFT_ORDER_NOTIFICATION_SENT",
+              summary: `Sent a Shopify draft-order notification email to ${merchantEmail}.`,
+              metadata: {
+                invoiceUrl: draftOrderInvoiceUrl,
+                merchantEmail,
+                contactEmail: purchaseOrder.contactEmail,
+              },
+            });
+          } catch (auditError) {
+            console.error("Failed to record merchant notification audit event", {
+              purchaseOrderId: purchaseOrder.id,
+              draftOrderId,
+              auditError,
+            });
+          }
+        }
+      } catch (notificationError) {
+        console.error("Failed to send merchant draft-order notification", {
+          shopDomain: input.shopDomain,
+          purchaseOrderId: purchaseOrder.id,
+          draftOrderId,
+          notificationError,
+        });
+
+        try {
+          await createAuditEvent({
+            shopId: purchaseOrder.shopId,
+            purchaseOrderId: purchaseOrder.id,
+            entityType: "DRAFT_ORDER",
+            entityId: draftOrderId,
+            action: "DRAFT_ORDER_NOTIFICATION_FAILED",
+            summary: "Draft order was created, but the merchant notification email failed.",
+            metadata: {
+              invoiceUrl: draftOrderInvoiceUrl,
+              contactEmail: purchaseOrder.contactEmail,
+              error:
+                notificationError instanceof Error
+                  ? notificationError.message
+                  : "Unknown notification error.",
+            },
+          });
+        } catch (auditError) {
+          console.error("Failed to record draft-order notification failure audit event", {
+            purchaseOrderId: purchaseOrder.id,
+            draftOrderId,
+            auditError,
+          });
+        }
+      }
+    }
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Draft order creation failed.";

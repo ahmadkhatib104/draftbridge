@@ -1,9 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
-import {
-  getBillingDiagnostics,
-  syncBillingStateIfStale,
-} from "../services/billing.server";
 import { getOperationalReport } from "../services/reporting.server";
 import { requireShopContext } from "../services/shop-context.server";
 
@@ -17,32 +13,19 @@ function signedPercentDelta(current: number, prior: number) {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, shop } = await requireShopContext(request);
-  const billingState = await syncBillingStateIfStale({
+  const { shop } = await requireShopContext(request);
+  const report = await getOperationalReport({
     shopId: shop.id,
-    shopDomain: shop.shopDomain,
-    admin,
   });
-  const [billingDiagnostics, report] = await Promise.all([
-    getBillingDiagnostics({
-      shopId: shop.id,
-      billingState,
-      admin,
-    }),
-    getOperationalReport({
-      shopId: shop.id,
-    }),
-  ]);
 
   return {
     shop,
-    billingDiagnostics,
     report,
   };
 };
 
 export default function ReportingRoute() {
-  const { billingDiagnostics, report } = useLoaderData<typeof loader>();
+  const { report } = useLoaderData<typeof loader>();
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -70,21 +53,6 @@ export default function ReportingRoute() {
             </s-paragraph>
             <s-paragraph>
               Failure delta: {signedPercentDelta(report.current.failureRate, report.prior.failureRate)}
-            </s-paragraph>
-          </s-card>
-
-          <s-card heading="Usage billing diagnostics">
-            <s-paragraph>
-              Usage line item attached: {billingDiagnostics.activeSubscription?.hasUsageLineItem ? "Yes" : "No"}
-            </s-paragraph>
-            <s-paragraph>
-              Included successes: {billingDiagnostics.includedSuccessCount}
-            </s-paragraph>
-            <s-paragraph>
-              Overage successes: {billingDiagnostics.overageSuccessCount}
-            </s-paragraph>
-            <s-paragraph>
-              Billed overages: {billingDiagnostics.billedOverageCount} | Pending: {billingDiagnostics.pendingOverageCount}
             </s-paragraph>
           </s-card>
 
