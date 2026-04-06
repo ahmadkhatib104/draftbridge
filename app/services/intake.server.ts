@@ -127,7 +127,7 @@ function parseMailboxLine(value: string) {
   const directEmail = normalizeEmailAddress(trimmed);
 
   if (directEmail) {
-    const name = trimmed.replace(directEmail, "").replace(/[][<>"]/g, "").trim();
+    const name = trimmed.replace(directEmail, "").replace(/[<>[\]"]/g, "").trim();
 
     return {
       email: directEmail,
