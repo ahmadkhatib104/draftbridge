@@ -14,6 +14,11 @@ export interface CustomerMatchCandidate {
   legacyId: string;
 }
 
+interface CompanyContactCandidate {
+  gid: string;
+  companyGid: string;
+}
+
 function isRecoverableShopifyReadError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
 
@@ -186,6 +191,8 @@ export async function searchCustomers(shopDomain: string, term: string) {
 export async function createDraftOrder(input: {
   shopDomain: string;
   customerLegacyId?: string | null;
+  companyLegacyId?: string | null;
+  companyLocationLegacyId?: string | null;
   contactEmail?: string | null;
   note?: string | null;
   poNumber?: string | null;
@@ -196,6 +203,7 @@ export async function createDraftOrder(input: {
     originalUnitPrice?: string | null;
   }>;
 }) {
+  const purchasingEntity = await buildPurchasingEntityInput(input);
   const payload = await adminGraphql<{
     data?: {
       draftOrderCreate?: {
@@ -228,13 +236,7 @@ export async function createDraftOrder(input: {
       }`,
     {
       input: {
-        ...(input.customerLegacyId
-          ? {
-              purchasingEntity: {
-                customerId: toShopifyGid("Customer", input.customerLegacyId),
-              },
-            }
-          : {}),
+        ...(purchasingEntity ? { purchasingEntity } : {}),
         email: input.contactEmail ?? undefined,
         note:
           [input.poNumber ? `PO ${input.poNumber}` : null, input.note ?? null]
@@ -271,6 +273,101 @@ export async function createDraftOrder(input: {
   }
 
   return draftOrder;
+}
+
+async function buildPurchasingEntityInput(input: {
+  shopDomain: string;
+  customerLegacyId?: string | null;
+  companyLegacyId?: string | null;
+  companyLocationLegacyId?: string | null;
+}) {
+  const normalizedCustomerId = input.customerLegacyId?.trim();
+  const normalizedCompanyId = input.companyLegacyId?.trim();
+  const normalizedCompanyLocationId = input.companyLocationLegacyId?.trim();
+
+  if (normalizedCustomerId && normalizedCompanyId && normalizedCompanyLocationId) {
+    const companyContact = await getCompanyContactForCustomer({
+      shopDomain: input.shopDomain,
+      customerLegacyId: normalizedCustomerId,
+      companyLegacyId: normalizedCompanyId,
+    });
+
+    if (companyContact?.gid) {
+      return {
+        purchasingCompany: {
+          companyId: toShopifyGid("Company", normalizedCompanyId),
+          companyLocationId: toShopifyGid("CompanyLocation", normalizedCompanyLocationId),
+          companyContactId: companyContact.gid,
+        },
+      };
+    }
+  }
+
+  if (normalizedCustomerId) {
+    return {
+      customerId: toShopifyGid("Customer", normalizedCustomerId),
+    };
+  }
+
+  return undefined;
+}
+
+async function getCompanyContactForCustomer(input: {
+  shopDomain: string;
+  customerLegacyId: string;
+  companyLegacyId: string;
+}) {
+  try {
+    const payload = await adminGraphql<{
+      data?: {
+        customer?: {
+          companyContactProfiles?: Array<{
+            id: string;
+            company?: {
+              id?: string | null;
+            } | null;
+          }> | null;
+        } | null;
+      };
+    }>(
+      input.shopDomain,
+      `#graphql
+        query DraftBridgeCompanyContactLookup($id: ID!) {
+          customer(id: $id) {
+            companyContactProfiles {
+              id
+              company {
+                id
+              }
+            }
+          }
+        }`,
+      {
+        id: toShopifyGid("Customer", input.customerLegacyId),
+      },
+    );
+
+    const expectedCompanyGid = toShopifyGid("Company", input.companyLegacyId);
+    const matchingContact =
+      payload.data?.customer?.companyContactProfiles?.find(
+        (profile) => profile.company?.id === expectedCompanyGid,
+      ) ?? null;
+
+    if (!matchingContact?.id || !matchingContact.company?.id) {
+      return null;
+    }
+
+    return {
+      gid: matchingContact.id,
+      companyGid: matchingContact.company.id,
+    } satisfies CompanyContactCandidate;
+  } catch (error) {
+    if (isRecoverableShopifyReadError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function getVariantByLegacyId(shopDomain: string, legacyId: string) {
@@ -321,6 +418,9 @@ export async function getVariantByLegacyId(shopDomain: string, legacyId: string)
   } satisfies VariantMatchCandidate;
 }
 
-function toShopifyGid(resource: "Customer" | "ProductVariant", value: string) {
+function toShopifyGid(
+  resource: "Customer" | "ProductVariant" | "Company" | "CompanyLocation" | "CompanyContact",
+  value: string,
+) {
   return value.startsWith("gid://shopify/") ? value : `gid://shopify/${resource}/${value}`;
 }

@@ -21,6 +21,11 @@ interface NormalizedInboundAttachment {
   contentBase64?: string | null;
 }
 
+interface NormalizedInboundHeader {
+  name?: string | null;
+  value?: string | null;
+}
+
 export interface NormalizedInboundEmailPayload {
   messageId?: string | null;
   from?: string | null;
@@ -31,6 +36,7 @@ export interface NormalizedInboundEmailPayload {
   routingKey?: string | null;
   textBody?: string | null;
   htmlBody?: string | null;
+  headers?: NormalizedInboundHeader[];
   attachments?: NormalizedInboundAttachment[];
 }
 
@@ -56,9 +62,18 @@ interface SourceDocumentCandidateScoreInput {
 
 const PRIMARY_FILENAME_HINT = /(po|purchase.?order|order|wholesale)/i;
 const SUPPORTING_FILENAME_HINT = /(packing|terms|conditions|instructions|readme|spec|invoice|receipt)/i;
+const FORWARDED_MESSAGE_MARKER =
+  /(?:^|\n)(?:-{2,}\s*forwarded message\s*-{2,}|begin forwarded message:)/i;
 const scheduledInboundMessageIds = new Set<string>();
 let inboundProcessingQueueScheduled = false;
 let inboundProcessingQueueActive = false;
+
+interface ResolvedInboundSender {
+  senderEmail: string;
+  senderName: string | null;
+  forwardedByEmail: string | null;
+  source: "payload" | "headers" | "forwarded-body";
+}
 
 function normalizeEmailAddress(value: string | null | undefined) {
   if (!value) {
@@ -83,6 +98,166 @@ function normalizeSenderEmail(payload: NormalizedInboundEmailPayload) {
 
 function normalizeSenderName(payload: NormalizedInboundEmailPayload) {
   return payload.fromName?.trim() || null;
+}
+
+function normalizeHeaderName(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function parseMailboxLine(value: string) {
+  const trimmed = value.trim();
+  const angleMatch = trimmed.match(/^(.*?)<([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>$/i);
+
+  if (angleMatch) {
+    return {
+      email: normalizeEmailAddress(angleMatch[2]),
+      name: angleMatch[1]?.replace(/^"+|"+$/g, "").trim() || null,
+    };
+  }
+
+  const mailtoMatch = trimmed.match(/^(.*?)\[mailto:([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\]$/i);
+
+  if (mailtoMatch) {
+    return {
+      email: normalizeEmailAddress(mailtoMatch[2]),
+      name: mailtoMatch[1]?.replace(/^"+|"+$/g, "").trim() || null,
+    };
+  }
+
+  const directEmail = normalizeEmailAddress(trimmed);
+
+  if (directEmail) {
+    const name = trimmed.replace(directEmail, "").replace(/[][<>"]/g, "").trim();
+
+    return {
+      email: directEmail,
+      name: name || null,
+    };
+  }
+
+  return null;
+}
+
+function getHeaderValue(
+  payload: NormalizedInboundEmailPayload,
+  expectedNames: string[],
+) {
+  const normalizedNames = new Set(expectedNames.map((name) => name.toLowerCase()));
+
+  for (const header of payload.headers ?? []) {
+    const headerName = normalizeHeaderName(header.name);
+
+    if (normalizedNames.has(headerName) && header.value?.trim()) {
+      return header.value.trim();
+    }
+  }
+
+  return null;
+}
+
+function extractForwardedSenderFromHeaders(
+  payload: NormalizedInboundEmailPayload,
+  receivedFromEmail: string,
+) {
+  const headerValue = getHeaderValue(payload, [
+    "x-original-from",
+    "x-forwarded-for",
+    "resent-from",
+    "original-from",
+  ]);
+
+  if (!headerValue) {
+    return null;
+  }
+
+  const parsed = parseMailboxLine(headerValue);
+
+  if (!parsed?.email || parsed.email === receivedFromEmail) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function extractForwardedSenderFromBody(
+  payload: NormalizedInboundEmailPayload,
+  receivedFromEmail: string,
+) {
+  const body = payload.textBody?.trim() || "";
+  const subject = payload.subject?.trim() || "";
+  const looksForwarded =
+    FORWARDED_MESSAGE_MARKER.test(body) || /^(?:fw|fwd)\s*:/i.test(subject);
+
+  if (!looksForwarded) {
+    return null;
+  }
+
+  const forwardedSection =
+    body.split(FORWARDED_MESSAGE_MARKER)[1] ??
+    body;
+  const headerBlock = forwardedSection.split(/\n\s*\n/)[0]?.slice(0, 2500) ?? forwardedSection;
+  const mailboxPatterns = [
+    /^(?:from|de)\s*:\s*(.+?)\s*<([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>\s*$/im,
+    /^(?:from|de)\s*:\s*(.+?)\s*\[mailto:([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\]\s*$/im,
+    /^(?:from|de)\s*:\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*$/im,
+  ];
+
+  for (const pattern of mailboxPatterns) {
+    const match = headerBlock.match(pattern);
+
+    if (!match) {
+      continue;
+    }
+
+    const emailCandidate = normalizeEmailAddress(match[2] ?? match[1]);
+
+    if (!emailCandidate || emailCandidate === receivedFromEmail) {
+      continue;
+    }
+
+    const nameCandidate = (match[2] ? match[1] : null)?.trim() || null;
+
+    return {
+      email: emailCandidate,
+      name: nameCandidate,
+    };
+  }
+
+  return null;
+}
+
+export function resolveInboundSender(payload: NormalizedInboundEmailPayload): ResolvedInboundSender {
+  const receivedFromEmail = normalizeSenderEmail(payload);
+  const receivedFromName = normalizeSenderName(payload);
+
+  const headerSender = extractForwardedSenderFromHeaders(payload, receivedFromEmail);
+
+  if (headerSender) {
+    return {
+      senderEmail: headerSender.email,
+      senderName: headerSender.name,
+      forwardedByEmail: receivedFromEmail || null,
+      source: "headers",
+    };
+  }
+
+  const bodySender = extractForwardedSenderFromBody(payload, receivedFromEmail);
+
+  if (bodySender) {
+    return {
+      senderEmail: bodySender.email,
+      senderName: bodySender.name,
+      forwardedByEmail: receivedFromEmail || null,
+      source: "forwarded-body",
+    };
+  }
+
+  return {
+    senderEmail: receivedFromEmail,
+    senderName: receivedFromName,
+    forwardedByEmail: null,
+    source: "payload",
+  };
 }
 
 function inferMailboxRoutingKey(payload: NormalizedInboundEmailPayload) {
@@ -111,12 +286,15 @@ function buildAttachmentFingerprint(attachments: NormalizedInboundAttachment[] |
     .join("|");
 }
 
-function buildMessageHash(payload: NormalizedInboundEmailPayload) {
+function buildMessageHash(
+  payload: NormalizedInboundEmailPayload,
+  senderEmail: string,
+) {
   return createHash("sha256")
     .update(
       [
         payload.messageId || "",
-        normalizeSenderEmail(payload),
+        senderEmail,
         payload.subject || "",
         payload.date || "",
         payload.textBody || "",
@@ -567,13 +745,14 @@ export async function handleInboundEmail(
     throw new Error(`No mailbox is configured for routing key ${routingKey}.`);
   }
 
-  const senderEmail = normalizeSenderEmail(payload);
+  const senderIdentity = resolveInboundSender(payload);
+  const senderEmail = senderIdentity.senderEmail;
   if (!senderEmail) {
     throw new Error("Could not determine sender email from inbound email.");
   }
 
-  const senderName = normalizeSenderName(payload);
-  const dedupeHash = buildMessageHash(payload);
+  const senderName = senderIdentity.senderName;
+  const dedupeHash = buildMessageHash(payload, senderEmail);
 
   await db.senderProfile.upsert({
     where: {
@@ -647,6 +826,8 @@ export async function handleInboundEmail(
       metadata: {
         subject: payload.subject ?? null,
         attachmentCount: payload.attachments?.length ?? 0,
+        senderSource: senderIdentity.source,
+        forwardedByEmail: senderIdentity.forwardedByEmail,
       },
     });
 

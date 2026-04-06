@@ -900,6 +900,8 @@ export async function retryPurchaseOrderResolution(input: {
       const draftOrder = await createDraftOrder({
         shopDomain: input.shopDomain,
         customerLegacyId: customerMatch.customerId,
+        companyLegacyId: customerMatch.companyId,
+        companyLocationLegacyId: customerMatch.companyLocationId,
         contactEmail: purchaseOrder.contactEmail,
         poNumber: purchaseOrder.poNumber,
         note: purchaseOrder.notes,

@@ -106,6 +106,10 @@ export default {
       routingKey: deriveRoutingKey(recipient),
       textBody: typeof parsed.text === "string" ? parsed.text : "",
       htmlBody: typeof parsed.html === "string" ? parsed.html : "",
+      headers: Array.from(message.headers.entries()).map(([name, value]) => ({
+        name,
+        value,
+      })),
       attachments: (parsed.attachments ?? []).map((attachment: Record<string, unknown>) => {
         const normalizedAttachment = attachment as {
           content?: unknown;

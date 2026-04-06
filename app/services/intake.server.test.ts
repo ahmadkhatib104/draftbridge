@@ -21,7 +21,10 @@ vi.mock("./storage.server", () => ({
   persistSourceDocumentContent: vi.fn(),
 }));
 
-import { scoreSourceDocumentCandidate } from "./intake.server";
+import {
+  resolveInboundSender,
+  scoreSourceDocumentCandidate,
+} from "./intake.server";
 
 describe("inbound intake document scoring", () => {
   it("prefers structured attachments over email body when attachments exist", () => {
@@ -63,5 +66,48 @@ describe("inbound intake document scoring", () => {
     });
 
     expect(poPdfScore).toBeGreaterThan(packingSlipScore);
+  });
+
+  it("attributes forwarded inbox mail to the original retailer sender", () => {
+    const sender = resolveInboundSender({
+      from: "sales@merchant.com",
+      fromName: "Sales Team",
+      subject: "Fwd: PO 10052",
+      textBody: `---------- Forwarded message ---------
+From: Retail Buyer <buyer@retailer.com>
+Date: Fri, Apr 4, 2026
+Subject: PO 10052
+To: sales@merchant.com
+
+Purchase Order 10052`,
+    });
+
+    expect(sender).toEqual({
+      senderEmail: "buyer@retailer.com",
+      senderName: "Retail Buyer",
+      forwardedByEmail: "sales@merchant.com",
+      source: "forwarded-body",
+    });
+  });
+
+  it("prefers explicit original-sender headers when available", () => {
+    const sender = resolveInboundSender({
+      from: "sales@merchant.com",
+      fromName: "Sales Team",
+      headers: [
+        {
+          name: "X-Original-From",
+          value: "Retail Buyer <buyer@retailer.com>",
+        },
+      ],
+      textBody: "Purchase Order 10052",
+    });
+
+    expect(sender).toEqual({
+      senderEmail: "buyer@retailer.com",
+      senderName: "Retail Buyer",
+      forwardedByEmail: "sales@merchant.com",
+      source: "headers",
+    });
   });
 });

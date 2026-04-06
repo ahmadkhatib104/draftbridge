@@ -94,6 +94,94 @@ describe("shopify admin service", () => {
     });
   });
 
+  it("creates B2B draft orders with purchasing company context when company matches are available", async () => {
+    graphqlMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              customer: {
+                companyContactProfiles: [
+                  {
+                    id: "gid://shopify/CompanyContact/321",
+                    company: {
+                      id: "gid://shopify/Company/77",
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              draftOrderCreate: {
+                draftOrder: {
+                  id: "gid://shopify/DraftOrder/43",
+                  name: "#D43",
+                  invoiceUrl: null,
+                },
+                userErrors: [],
+              },
+            },
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    await createDraftOrder({
+      shopDomain: "example.myshopify.com",
+      customerLegacyId: "123",
+      companyLegacyId: "77",
+      companyLocationLegacyId: "88",
+      contactEmail: "buyer@example.com",
+      poNumber: "PO-B2B",
+      currencyCode: "USD",
+      lineItems: [
+        {
+          variantLegacyId: "456",
+          quantity: 3,
+          originalUnitPrice: "14.00",
+        },
+      ],
+    });
+
+    const [, mutationOptions] = graphqlMock.mock.calls[1] ?? [];
+    expect(mutationOptions?.variables).toEqual({
+      input: {
+        purchasingEntity: {
+          purchasingCompany: {
+            companyId: "gid://shopify/Company/77",
+            companyLocationId: "gid://shopify/CompanyLocation/88",
+            companyContactId: "gid://shopify/CompanyContact/321",
+          },
+        },
+        email: "buyer@example.com",
+        note: "PO PO-B2B",
+        poNumber: "PO-B2B",
+        sourceName: "draftbridge",
+        lineItems: [
+          {
+            variantId: "gid://shopify/ProductVariant/456",
+            quantity: 3,
+            originalUnitPriceWithCurrency: {
+              amount: "14.00",
+              currencyCode: "USD",
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it("searches customers without requesting protected name or email fields", async () => {
     graphqlMock.mockResolvedValue(
       new Response(
