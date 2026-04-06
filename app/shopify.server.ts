@@ -28,11 +28,18 @@ const shopify = shopifyApp({
   billing: {
     [DRAFTBRIDGE_STARTER_PLAN]: {
       trialDays: DRAFTBRIDGE_TRIAL_DAYS,
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       lineItems: [
         {
           amount: 99,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
+        },
+        {
+          amount: 5000,
+          currencyCode: "USD",
+          interval: BillingInterval.Usage,
+          terms: "$3.00 / successful PO beyond included 25",
         },
       ],
     },
@@ -45,6 +52,12 @@ const shopify = shopifyApp({
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
         },
+        {
+          amount: 5000,
+          currencyCode: "USD",
+          interval: BillingInterval.Usage,
+          terms: "$2.00 / successful PO beyond included 100",
+        },
       ],
     },
     [DRAFTBRIDGE_SCALE_PLAN]: {
@@ -55,6 +68,12 @@ const shopify = shopifyApp({
           amount: 499,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
+        },
+        {
+          amount: 5000,
+          currencyCode: "USD",
+          interval: BillingInterval.Usage,
+          terms: "$1.50 / successful PO beyond included 300",
         },
       ],
     },
