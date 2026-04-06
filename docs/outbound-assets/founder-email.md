@@ -26,8 +26,9 @@ The result is fewer data-entry errors, faster turnaround on wholesale orders,
 and your ops team spending time on exceptions instead of retyping routine POs.
 
 Would it be useful to see this on one real PO from your store? I can set up
-a 60-second demo using an actual order from your inbox — no commitment, just
-the before-and-after.
+a 60-second demo using an actual order from your inbox before you install
+anything. If you prefer, you can use an old fulfilled PO or redact customer
+details. I just need your real format and SKUs to show the before-and-after.
 
 Best,
 {{sender_name}}

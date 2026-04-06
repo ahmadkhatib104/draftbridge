@@ -606,8 +606,16 @@ a:hover {
   text-align: center;
 }
 
+.form-note + .form-note {
+  margin-top: var(--space-sm);
+}
+
 .form-note a {
   color: var(--color-text);
+}
+
+.form-note-secondary {
+  font-size: 0.85rem;
 }
 
 /* ========================================

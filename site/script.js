@@ -21,10 +21,13 @@ if (pilotRequestForm instanceof HTMLFormElement) {
       `Shopify store: ${store || "Not provided"}`,
       `Approx. wholesale POs per month: ${volume || "Not provided"}`,
       "",
+      "Please attach one sample wholesale PO PDF, CSV, XLSX, or forwarded email.",
+      "Redacted customer names or an old fulfilled PO are fine for the demo.",
+      "",
       "Notes:",
       notes || "Not provided",
       "",
-      "Please reply with the best forwarding address and next steps.",
+      "If the sample looks good, please reply with the best install link and next steps.",
     ];
 
     const mailtoUrl = new URL("mailto:support@draftbridgehq.com");

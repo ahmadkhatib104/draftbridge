@@ -18,7 +18,8 @@ If {{merchant_name}} processes even 20 wholesale orders per week, that is
 5–10 hours of pure data entry that DraftBridge handles automatically.
 
 Happy to show you with one real PO if you want to see the output — takes
-about 60 seconds to set up.
+about 60 seconds to set up, and you do not need to install anything for the
+first proof.
 
 Best,
 {{sender_name}}
@@ -35,9 +36,9 @@ If the wholesale PO retyping problem is already solved at {{merchant_name}},
 no worries at all. But if your team is still manually entering orders from
 email or spreadsheet, DraftBridge eliminates that step entirely.
 
-The setup is: forward your PO emails to a DraftBridge address, and validated
-draft orders appear in Shopify automatically. Uncertain ones stay in a review
-queue so nothing goes through wrong.
+The lowest-friction way to test this is to send one sample PO first. I run it
+through DraftBridge, send back the proof, and only then send you the install
+link if the output looks right.
 
 If it's ever useful, I'm at {{sender_email}}.
 
@@ -54,20 +55,17 @@ Send this after a positive reply:
 
 > Great — here is how to see DraftBridge on a real order:
 >
-> 1. Install DraftBridge from the Shopify App Store (link: {{app_store_url}})
->    or I can send you a direct install link.
-> 2. Open DraftBridge in your Shopify admin. The onboarding page shows your
->    unique forwarding address.
-> 3. Forward one real wholesale PO email (with the PDF or spreadsheet attached)
->    to that address.
-> 4. Open the DraftBridge orders page. You should see the parsed PO and the
->    resulting draft order within a minute.
+> 1. Reply to this email with one sample wholesale PO attached, or send it to
+>    support@draftbridgehq.com if that is easier from your normal inbox.
+> 2. If you prefer, feel free to use an old fulfilled PO or redact customer
+>    names. I only need your real document format and SKUs.
+> 3. Include your Shopify store domain if you want me to prefill the install
+>    link for the next step.
+> 4. I will send back the parsed PO, the resulting draft order proof, and any
+>    exceptions I had to resolve.
 >
-> If anything comes back uncertain, it will appear in the exception queue
-> instead of creating a bad order.
->
-> Want me to walk you through it on a quick call, or are you comfortable
-> trying it from the install link?
+> No install is required for this first proof. If the output looks right, I
+> will send you the direct install link next.
 
 ### After the sample PO succeeds
 
@@ -80,11 +78,34 @@ Send this confirming the result:
 > - Created draft order {{draft_order_name}} in your Shopify admin
 > - Overall confidence: {{confidence_percent}}%
 >
-> From here, you can set up an auto-forward rule in Gmail/Outlook so all
-> incoming wholesale POs go through DraftBridge automatically. The 14-day
-> trial starts when you choose a plan — no charge until then.
+> If you want to turn this on in your store, install DraftBridge here:
+> `https://draftbridge.onrender.com/auth/login?shop={{shop_domain}}`
 >
-> Any questions about the output or the pricing?
+> After install:
+> - Open DraftBridge in Shopify
+> - Copy your unique forwarding address from onboarding
+> - Set up an auto-forward rule in Gmail or Outlook
+> - Forward your next live PO and it will land in Shopify automatically
+>
+> If you want, I can stay with you through the first live install and first
+> forwarded PO.
+
+### After the first successful week
+
+Send this after the merchant has seen live value:
+
+> Thanks again for testing DraftBridge. If it has already saved your team time,
+> would you be open to leaving a short Shopify App Store review?
+>
+> Even 2-3 sentences on what changed for your ops workflow helps a lot at this
+> stage.
+>
+> Review link: {{review_url}}
+>
+> The most useful details are:
+> - how many wholesale POs you were entering manually before
+> - what DraftBridge now handles automatically
+> - whether the exception queue or SKU matching saved your team time
 
 ## Cadence rules
 

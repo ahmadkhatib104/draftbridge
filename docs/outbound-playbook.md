@@ -23,12 +23,15 @@ wholesale channel on their Shopify store.
 
 ## Demo Motion
 
-1. Ask for one sample PO.
-2. Show the forwarded email landing in DraftBridge.
-3. Show the resulting draft order in Shopify.
-4. Show the merchant exception queue for low-confidence cases, then show the
+1. Ask for one sample PO before asking for any Shopify install.
+2. Explicitly say a redacted or old fulfilled PO is acceptable for the demo.
+3. Run the sample through DraftBridge and send back proof: the source document,
+   matched lines, resulting draft order, and any exception handling.
+4. Only after the proof lands, send a direct install link:
+   `https://draftbridge.onrender.com/auth/login?shop={{shop_domain}}`
+5. Show the merchant exception queue for low-confidence cases, then show the
    internal ops queue only as the support backstop.
-5. Quote time saved and error reduction instead of generic AI language.
+6. Quote time saved and error reduction instead of generic AI language.
 
 ## Positioning
 
@@ -43,6 +46,7 @@ wholesale channel on their Shopify store.
 - Touch 3: Breakup with clear offer (Day 7)
 - Never more than 3 emails without a reply
 - If they reply positively, switch to the sample-PO demo setup flow
+- After the first successful pilots, ask for Shopify App Store reviews
 
 ## Channels (Priority Order)
 
@@ -62,3 +66,4 @@ wholesale channel on their Shopify store.
 - 5 sample PO demos completed
 - 2–3 trial installs
 - 1 paid conversion
+- 3 review requests sent to successful pilots

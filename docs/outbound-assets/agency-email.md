@@ -30,8 +30,9 @@ For agencies, the value is straightforward:
   separate vendor relationship to manage.
 
 If you have one or two wholesale clients where this fits, I'm happy to run a
-sample PO through DraftBridge and show the result. No commitment beyond
-forwarding one email.
+sample PO through DraftBridge and show the result before asking them to
+install anything. No commitment beyond forwarding one email, and they can
+redact customer details or use an old fulfilled PO if they prefer.
 
 Best,
 {{sender_name}}
