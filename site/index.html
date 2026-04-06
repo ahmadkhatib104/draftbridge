@@ -203,8 +203,7 @@
       <div class="cta-card">
         <h2>See DraftBridge on your real PO in 60 seconds</h2>
         <p>Send us one sample wholesale purchase order. We'll show you the validated draft order it creates — no commitment, no payment, no call required.</p>
-        <form class="cta-form" name="pilot-request" method="POST" data-netlify="true" action="/thank-you">
-          <input type="hidden" name="form-name" value="pilot-request">
+        <form class="cta-form" id="pilot-request-form">
           <div class="form-row">
             <div class="form-group">
               <label for="contact-name">Your name</label>
@@ -230,6 +229,11 @@
             <textarea id="notes" name="notes" rows="3" placeholder="Tell us about your wholesale workflow or attach a sample PO format description"></textarea>
           </div>
           <button type="submit" class="btn btn-lg btn-primary">Request a Sample PO Demo</button>
+          <p class="form-note">
+            Clicking submit opens a prefilled email to
+            <a href="mailto:support@draftbridgehq.com">support@draftbridgehq.com</a>
+            so you can send your sample PO directly.
+          </p>
         </form>
       </div>
     </div>
@@ -252,5 +256,6 @@
     </div>
   </footer>
 
+  <script src="script.js"></script>
 </body>
 </html>

@@ -598,6 +598,18 @@ a:hover {
   margin-top: var(--space-sm);
 }
 
+.form-note {
+  margin-top: var(--space-md);
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.form-note a {
+  color: var(--color-text);
+}
+
 /* ========================================
    Footer
    ======================================== */
