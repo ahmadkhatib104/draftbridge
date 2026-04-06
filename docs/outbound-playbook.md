@@ -15,6 +15,32 @@ Use [public-audit-checklist.md](outbound-assets/public-audit-checklist.md) to
 qualify each target before sending cold email. Every target must have a visible
 wholesale channel on their Shopify store.
 
+## Execution Tooling
+
+Use the repo research CLI to build the first target list:
+
+```bash
+npm run outbound:research -- \
+  --query '"wholesale" "beauty" "trade account"' \
+  --query '"wholesale" "snacks" "retailers"' \
+  --query '"stockists" "shopify"' \
+  --output tmp/outbound-targets.csv
+```
+
+You can also start from a hand-built seed file:
+
+```bash
+npm run outbound:research -- \
+  --input tmp/seed-domains.txt \
+  --output tmp/outbound-targets.csv
+```
+
+The CSV includes company name, detected wholesale page, contact email, score,
+verdict, and the reasons behind the score so you can review the top 50 quickly.
+Avoid generic `"shopify"`-only queries as your primary source; they surface too
+many vendors, agencies, and app ecosystem sites. Start with vertical-specific
+queries, then review the scored CSV manually.
+
 ## Outbound Templates
 
 - **Founder / ops manager:** [founder-email.md](outbound-assets/founder-email.md)

@@ -24,6 +24,7 @@
     "data:prune": "tsx scripts/prune-uninstalled-shops.ts",
     "inbound:drain": "tsx scripts/process-pending-inbound.ts",
     "report:drift": "tsx scripts/report-ops-drift.ts",
+    "outbound:research": "tsx scripts/build-outbound-targets.ts",
     "billing:validate": "tsx scripts/validate-billing.ts",
     "render:build": "npm run db:generate && npm run build && node scripts/patch-prisma-server-build.mjs",
     "render:start": "npm run start",
