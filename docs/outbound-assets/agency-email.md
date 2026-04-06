@@ -1,22 +1,45 @@
-# Agency Outreach Template
+# Agency / Shopify Partner Cold Email
 
-Subject: standardizing review controls across your Shopify portfolio
+## Subject lines (rotate)
 
-Hi {{contact_name_or_team}},
+- Wholesale order automation across your Shopify portfolio
+- The #1 ops bottleneck your wholesale clients ask about
+- Quick tool for the PO-retyping problem on Shopify
 
-I noticed you appear to manage stores with live Shopify review stacks, likely including Judge.me.
+## Body
 
-The common problem is not review collection. It is that each brand handles review policy, imported-review disclosure, provenance, moderation, and documentation differently, which makes the stack harder to defend internally and publicly.
+Hi {{contact_name}},
 
-ProofLoop gives agencies a way to standardize:
+I see {{agency_name}} manages Shopify stores with active wholesale channels.
 
-- public review policy
-- provenance and disclosure controls
-- moderation audit trail
-- monthly controls reporting
+The most common ops bottleneck I hear from those merchants is the same every
+time: inbound purchase orders arrive by email, PDF, or spreadsheet, and
+someone manually retypes each one into a Shopify draft order. It takes hours,
+it introduces errors, and nobody on the team enjoys it.
 
-The easiest starting point is one store audit, then a repeatable rollout if the fit is there.
+DraftBridge eliminates that step. The merchant sets up email forwarding once,
+and every inbound PO is automatically matched to Shopify products and turned
+into a validated draft order. Uncertain orders stay in a review queue instead
+of going through wrong.
 
-If useful, I can send a short audit on one account and show which controls are already visible versus what still looks weak.
+For agencies, the value is straightforward:
 
-{{cta}}
+- It reduces the #1 support request from wholesale clients.
+- It improves order accuracy without custom dev work.
+- It installs in minutes and bills through Shopify, so there is no
+  separate vendor relationship to manage.
+
+If you have one or two wholesale clients where this fits, I'm happy to run a
+sample PO through DraftBridge and show the result. No commitment beyond
+forwarding one email.
+
+Best,
+{{sender_name}}
+DraftBridge — draftbridgehq.com
+
+## Notes
+
+- Target: Shopify Plus agencies, Shopify Expert partners, and B2B-focused
+  ecommerce consultancies.
+- The pitch is "reduce your client support load" not "sell this to your clients."
+- Follow up within 3 days if no response (see follow-up-sequence.md).

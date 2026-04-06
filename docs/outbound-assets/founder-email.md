@@ -1,28 +1,43 @@
-# Founder Outreach Template
+# Founder / Ops Manager Cold Email
 
-Subject: quick review-controls audit for {{merchant_name}}
+## Subject lines (rotate)
 
-Hi {{contact_name_or_team}},
+- How {{merchant_name}} handles inbound wholesale POs today
+- Quick question about your wholesale order entry process
+- Saving {{merchant_name}} 8–12 hours/week on PO retyping
 
-I noticed {{merchant_name}} already has live reviews, but the public explanation around how those reviews are sourced, disclosed, and documented looks thin.
+## Body
 
-The gap is usually not “get more reviews.” It is:
+Hi {{contact_name}},
 
-- no clear public review policy
-- weak imported or incentivized disclosure handling
-- thin provenance signals
-- no forwardable internal controls record
+I noticed {{merchant_name}} does meaningful wholesale volume on Shopify, and
+I'm guessing those inbound POs still arrive as emails, PDFs, and spreadsheets
+that someone on your team retypes into draft orders.
 
-ProofLoop sits alongside Judge.me and helps a store get those foundations live without changing review providers.
+We built DraftBridge to fix exactly that problem:
 
-If useful, I can send a short public audit of:
+1. You forward wholesale PO emails to a DraftBridge address.
+2. DraftBridge reads the attachment, matches every SKU to your Shopify catalog,
+   validates quantities and pricing, and creates the draft order automatically.
+3. If anything looks uncertain, the order stays visible in a review queue instead
+   of going through wrong.
 
-- review policy visibility
-- disclosure handling
-- provenance signals
-- moderation record
-- monthly controls history
+The result is fewer data-entry errors, faster turnaround on wholesale orders,
+and your ops team spending time on exceptions instead of retyping routine POs.
 
-If the gaps are real, Basic is usually enough to get the public policy and storefront trust layer live.
+Would it be useful to see this on one real PO from your store? I can set up
+a 60-second demo using an actual order from your inbox — no commitment, just
+the before-and-after.
 
-{{cta}}
+Best,
+{{sender_name}}
+DraftBridge — draftbridgehq.com
+
+## Notes
+
+- Personalize the first line by confirming the merchant does wholesale (check
+  their site for a wholesale page, B2B login, or bulk pricing).
+- The ask is small: "send one PO." That is the entire conversion motion.
+- Do NOT lead with "AI." Lead with time saved and error reduction.
+- If they reply with interest, respond with the sample-PO setup instructions
+  (see follow-up-sequence.md).
